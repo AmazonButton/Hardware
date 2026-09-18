@@ -9,7 +9,7 @@
 class PowerManager {
 public:
   static void init();
-  static void enterDeepSleep();
+  static void enterSleep();
   static esp_sleep_wakeup_cause_t getWakeupCause();
   static uint32_t readBatteryMillivolts();
   static uint8_t calculateBatteryPercentage(uint32_t millivolts = 0);

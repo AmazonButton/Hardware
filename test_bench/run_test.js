@@ -261,9 +261,9 @@ async function runCircuitTests() {
   hw.setBuzzer(false);
   hw.pins.IO39_SW1 = 'HIGH (Released)';
   assert(
-    'ESP32-S3 tắt toàn bộ ngoại vi và ngủ sâu (~15µA), sẵn sàng thức dậy qua IO39',
+    'ESP32-S3 tắt toàn bộ ngoại vi và ngủ siêu tiết kiệm điện, sẵn sàng thức dậy tức thì qua SW1 (IO39)',
     hw.pins.IO7_LED_R.includes('HIGH') && hw.pins.IO2_BUZZER.includes('LOW'),
-    'esp_sleep_enable_ext0_wakeup(GPIO_NUM_39, 0) -> esp_deep_sleep_start()'
+    'gpio_wakeup_enable(GPIO_NUM_39, GPIO_INTR_LOW_LEVEL) -> esp_light_sleep_start() (hoặc ext0 Deep Sleep nếu câu dây IO10)'
   );
 
   console.log('\n----------------------------------------------------------------');

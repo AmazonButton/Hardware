@@ -17,7 +17,8 @@ enum ButtonGesture {
 class ButtonManager {
 public:
   static void init();
-  static ButtonGesture detectGesture();
+  static bool isPressed();
+  static ButtonGesture detectGesture(bool wokenFromSleep = false);
 };
 
 #endif

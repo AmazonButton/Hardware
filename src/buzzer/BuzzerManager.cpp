@@ -1,41 +1,40 @@
 #include "BuzzerManager.h"
 
+static void playTone(uint32_t freq, uint32_t durationMs) {
+  // Hỗ trợ cả còi thụ động (Passive Piezo) phát đúng tần số resonant
+  // lẫn còi chủ động (Active Buzzer) phát ra âm lượng to và rõ ràng
+  tone(PIN_BUZZER, freq, durationMs);
+  delay(durationMs);
+  noTone(PIN_BUZZER);
+  digitalWrite(PIN_BUZZER, LOW); // Đảm bảo Gate Q1 2N7002 về 0V (dòng tiêu thụ tĩnh = 0)
+}
+
 void BuzzerManager::init() {
   pinMode(PIN_BUZZER, OUTPUT);
   digitalWrite(PIN_BUZZER, LOW);
 }
 
 void BuzzerManager::beepBoot() {
-  // 1 short 80ms beep
-  digitalWrite(PIN_BUZZER, HIGH);
-  delay(80);
-  digitalWrite(PIN_BUZZER, LOW);
+  // 1 tiếng bíp ngắn 80ms (3.0kHz) khi khởi động nguồn
+  playTone(3000, 80);
 }
 
 void BuzzerManager::beepSuccess() {
-  // 2 crisp short beeps
-  digitalWrite(PIN_BUZZER, HIGH);
+  // 2 tiếng bíp vui tai (Success Chime: 2.7kHz -> 3.5kHz)
+  playTone(2700, 70);
   delay(60);
-  digitalWrite(PIN_BUZZER, LOW);
-  delay(60);
-  digitalWrite(PIN_BUZZER, HIGH);
-  delay(60);
-  digitalWrite(PIN_BUZZER, LOW);
+  playTone(3500, 90);
 }
 
 void BuzzerManager::beepError() {
-  // 3 quick warning beeps
+  // 3 tiếng bíp cảnh báo gấp gáp (2.2kHz)
   for (int i = 0; i < 3; i++) {
-    digitalWrite(PIN_BUZZER, HIGH);
-    delay(100);
-    digitalWrite(PIN_BUZZER, LOW);
+    playTone(2200, 100);
     if (i < 2) delay(60);
   }
 }
 
 void BuzzerManager::beepCancel() {
-  // 1 long 400ms cancel tone
-  digitalWrite(PIN_BUZZER, HIGH);
-  delay(350);
-  digitalWrite(PIN_BUZZER, LOW);
+  // 1 tiếng bíp trầm dài (Cancel Tone: 1.8kHz 320ms)
+  playTone(1800, 320);
 }

@@ -2,6 +2,7 @@
 #define STATE_MACHINE_H
 
 #include <Arduino.h>
+#include "../button/ButtonManager.h"
 
 enum SystemState {
   STATE_BOOT,
@@ -10,12 +11,15 @@ enum SystemState {
   STATE_WIFI_CONNECTING,
   STATE_SENDING_EVENT,
   STATE_LED_FEEDBACK,
-  STATE_ENTER_DEEP_SLEEP
+  STATE_ENTER_SLEEP
 };
 
 class StateMachine {
 public:
-  static void run();
+  static void init();
+  static void loop();
+  static void run(); // Tương thích ngược với các phiên bản cũ
+  static void handleGesture(ButtonGesture gesture);
 };
 
 #endif

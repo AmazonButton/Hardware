@@ -2,10 +2,9 @@
 #include "core/StateMachine.h"
 
 void setup() {
-  // Execute non-blocking state machine cycle
-  StateMachine::run();
+  StateMachine::init();
 }
 
 void loop() {
-  // Never reached because device enters Deep Sleep in StateMachine::run()
+  StateMachine::loop();
 }
