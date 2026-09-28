@@ -49,6 +49,19 @@
 #include <time.h>
 
 // =========================================================================================
+// 🔘 ĐỊNH NGHĨA CỬ CHỈ NÚT BẤM CƠ HỌC (MULTI-GESTURE ENUM)
+// =========================================================================================
+enum GestureType {
+  GESTURE_NONE,
+  GESTURE_SINGLE_CLICK,
+  GESTURE_DOUBLE_CLICK,
+  GESTURE_FIVE_CLICKS_PAIR,
+  GESTURE_HOLD_5S_ACTIVATE,
+  GESTURE_HOLD_10S_PROVISION,
+  GESTURE_HOLD_15S_FACTORY_RESET
+};
+
+// =========================================================================================
 // ⚙️ 1. ĐỊNH NGHĨA CHÂN PHẦN CỨNG & CẤU HÌNH ỔN ĐỊNH ESP32-S3
 // =========================================================================================
 // ⚠️ QUAN TRỌNG VỀ PHẦN CỨNG ESP32-S3:
@@ -72,7 +85,7 @@
 #define MAX17048_I2C_ADDR    0x36 // Địa chỉ I2C của IC đo pin MAX17048
 
 // =========================================================================================
-// ⚙️ 2. TÙY CHỌN BLE 5 PROVISIONING
+// ⚙️ 2. TÙY CHỌN BLE 5 PROVISIONING & BLUETOOTH CONTROL
 // =========================================================================================
 #define ENABLE_BLE 1
 
@@ -86,7 +99,13 @@
 #define BLE_CHAR_INFO_UUID      "0000FFF1-0000-1000-8000-00805F9B34FB"
 #define BLE_CHAR_WIFI_UUID      "0000FFF2-0000-1000-8000-00805F9B34FB"
 #define BLE_CHAR_STATUS_UUID    "0000FFF3-0000-1000-8000-00805F9B34FB"
-#define BLE_CHAR_SCAN_UUID      "0000FFF4-0000-1000-8000-00805F9B34FB"
+#define BLE_CHAR_LED_UUID       "0000FFF4-0000-1000-8000-00805F9B34FB"
+
+static BLEServer *pBleServer = nullptr;
+static BLECharacteristic *pBleStatusChar = nullptr;
+static BLECharacteristic *pBleLedChar = nullptr;
+static bool bleDeviceConnected = false;
+static bool bleConnectionStateChanged = false;
 #endif
 
 // =========================================================================================
@@ -177,6 +196,124 @@ void blinkLed(ButtonLedColor color, int times = 2, int delayMs = 120) {
     if (i < times - 1) delay(delayMs);
   }
 }
+
+#if ENABLE_BLE
+// =========================================================================================
+// 📡 BLE SERVER & CHARACTERISTIC CALLBACKS
+// =========================================================================================
+class SOBBleServerCallbacks : public BLEServerCallbacks {
+  void onConnect(BLEServer *pServer) {
+    bleDeviceConnected = true;
+    bleConnectionStateChanged = true;
+    Serial.println("\n[BLE] ========================================================");
+    Serial.println("[BLE] >>> THIẾT BỊ ĐÃ KẾT NỐI BLUETOOTH THÀNH CÔNG! <<<");
+    Serial.println("[BLE] ========================================================");
+  }
+
+  void onDisconnect(BLEServer *pServer) {
+    bleDeviceConnected = false;
+    bleConnectionStateChanged = true;
+    Serial.println("\n[BLE] ========================================================");
+    Serial.println("[BLE] >>> THIẾT BỊ ĐÃ NGẮT KẾT NỐI BLUETOOTH! <<<");
+    Serial.println("[BLE] Tự động phát lại quảng bá BLE để chờ kết nối lại...");
+    Serial.println("[BLE] ========================================================");
+    BLEDevice::startAdvertising();
+  }
+};
+
+class SOBBleWiFiCallbacks : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *pCharacteristic) {
+    String value = pCharacteristic->getValue().c_str();
+    if (value.length() > 0) {
+      Serial.printf("[BLE] Nhận gói cấu hình Wi-Fi (%d bytes)\n", value.length());
+      int separatorIndex = value.indexOf(':');
+      if (separatorIndex != -1) {
+        String ssid = value.substring(0, separatorIndex);
+        String pass = value.substring(separatorIndex + 1);
+        prefs.putString("wifi_ssid", ssid);
+        prefs.putString("wifi_pass", pass);
+        if (pBleStatusChar) {
+          uint8_t status = 0x03;
+          pBleStatusChar->setValue(&status, 1);
+          pBleStatusChar->notify();
+        }
+        delay(1000);
+        ESP.restart();
+      }
+    }
+  }
+};
+
+class SOBBleLedCallbacks : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *pCharacteristic) {
+    String val = pCharacteristic->getValue().c_str();
+    val.trim();
+    val.toUpperCase();
+    Serial.printf("[BLE] Nhận lệnh đổi màu LED: %s\n", val.c_str());
+    if (val == "RED" || val == "1") setLed(COLOR_RED);
+    else if (val == "GREEN" || val == "2") setLed(COLOR_GREEN);
+    else if (val == "BLUE" || val == "3") setLed(COLOR_BLUE);
+    else if (val == "YELLOW" || val == "4") setLed(COLOR_YELLOW);
+    else if (val == "PURPLE" || val == "5") setLed(COLOR_PURPLE);
+    else if (val == "CYAN" || val == "7") setLed(COLOR_CYAN);
+    else if (val == "WHITE" || val == "6") setLed(COLOR_WHITE);
+    else if (val == "OFF" || val == "0") setLed(COLOR_OFF);
+  }
+};
+
+void initBLE() {
+  String bleDeviceName = "SOB-" + String(DEVICE_ID);
+  BLEDevice::init(bleDeviceName.c_str());
+  pBleServer = BLEDevice::createServer();
+  pBleServer->setCallbacks(new SOBBleServerCallbacks());
+
+  BLEService *pService = pBleServer->createService(BLE_SERVICE_UUID);
+
+  // 1. Info Characteristic
+  BLECharacteristic *pInfoChar = pService->createCharacteristic(
+      BLE_CHAR_INFO_UUID,
+      BLECharacteristic::PROPERTY_READ
+  );
+  pInfoChar->setValue(DEVICE_ID);
+
+  // 2. Wi-Fi Config Write Characteristic
+  BLECharacteristic *pWiFiChar = pService->createCharacteristic(
+      BLE_CHAR_WIFI_UUID,
+      BLECharacteristic::PROPERTY_WRITE
+  );
+  pWiFiChar->setCallbacks(new SOBBleWiFiCallbacks());
+
+  // 3. Status Characteristic
+  pBleStatusChar = pService->createCharacteristic(
+      BLE_CHAR_STATUS_UUID,
+      BLECharacteristic::PROPERTY_NOTIFY
+  );
+  pBleStatusChar->addDescriptor(new BLE2902());
+
+  // 4. LED Control Characteristic
+  pBleLedChar = pService->createCharacteristic(
+      BLE_CHAR_LED_UUID,
+      BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE
+  );
+  pBleLedChar->setCallbacks(new SOBBleLedCallbacks());
+  pBleLedChar->setValue("GREEN");
+
+  pService->start();
+
+  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+  pAdvertising->addServiceUUID(BLE_SERVICE_UUID);
+  pAdvertising->setScanResponse(true);
+  pAdvertising->setMinPreferred(0x06);
+  pAdvertising->setMinPreferred(0x12);
+  BLEDevice::startAdvertising();
+
+  Serial.println("\n========================================================");
+  Serial.printf("[BLE] ĐANG PHÁT QUẢNG BÁ BLUETOOTH: '%s'\n", bleDeviceName.c_str());
+  Serial.println("[BLE] Đèn LED Xanh dương nhấp nháy: Đang chờ điện thoại kết nối Bluetooth...");
+  Serial.println("[BLE] Khi điện thoại bắt được kết nối -> Đèn sẽ tự động đổi màu XANH LÁ!");
+  Serial.println("========================================================\n");
+}
+#endif
 
 // =========================================================================================
 // 🔊 5. ĐIỀU KHIỂN CÒI BUZZER (HỖ TRỢ CẢ PASSIVE PIEZO & ACTIVE BUZZER)
@@ -422,16 +559,6 @@ void enterUltraSleep() {
 // =========================================================================================
 // 🔘 10. NHẬN DIỆN CỬ CHỈ NÚT BẤM CƠ HỌC (MULTI-GESTURE DECODER)
 // =========================================================================================
-enum GestureType {
-  GESTURE_NONE,
-  GESTURE_SINGLE_CLICK,
-  GESTURE_DOUBLE_CLICK,
-  GESTURE_FIVE_CLICKS_PAIR,
-  GESTURE_HOLD_5S_ACTIVATE,
-  GESTURE_HOLD_10S_PROVISION,
-  GESTURE_HOLD_15S_FACTORY_RESET
-};
-
 GestureType scanButtonGesture(bool wokenFromSleep = false) {
   bool initiallyLow = (digitalRead(PIN_BTN_ORDER) == LOW);
 
@@ -594,6 +721,11 @@ void setup() {
   delay(100);
   setLed(COLOR_OFF);
 
+  // ⚡ KHỞI ĐỘNG PHÁT SÓNG BLUETOOTH NGAY KHI VỪA NẠP CODE XONG / KHỞI ĐỘNG
+#if ENABLE_BLE
+  initBLE();
+#endif
+
   // Nếu người dùng đang giữ nút trong lúc cắm nguồn
   if (digitalRead(PIN_BTN_ORDER) == LOW) {
     GestureType gesture = scanButtonGesture(false);
@@ -602,10 +734,60 @@ void setup() {
 }
 
 void loop() {
-  // Đi vào chế độ ngủ tiết kiệm điện (Light Sleep qua IO39 hoặc Deep Sleep qua RTC IO10)
-  enterUltraSleep();
+  static unsigned long lastBlinkMs = 0;
+  static bool blinkState = false;
+  static bool wasConnected = false;
 
-  // Thức dậy tức thì khi người dùng bấm SW1!
-  GestureType gesture = scanButtonGesture(true);
-  processGesture(gesture);
+#if ENABLE_BLE
+  bool isConnected = bleDeviceConnected;
+
+  if (!isConnected) {
+    // 1. CHƯA BẮT ĐƯỢC BLUETOOTH:
+    // Đèn LED nhấp nháy màu XANH DƯƠNG (Blue) chu kỳ 500ms báo đang phát Bluetooth chờ bắt
+    if (millis() - lastBlinkMs >= 500) {
+      lastBlinkMs = millis();
+      blinkState = !blinkState;
+      setLed(blinkState ? COLOR_BLUE : COLOR_OFF);
+    }
+
+    // Nếu trước đó đang kết nối mà bị ngắt kết nối
+    if (wasConnected) {
+      wasConnected = false;
+      Serial.println("\n[BLE] Thiết bị đã ngắt kết nối! Đèn nhấp nháy Xanh dương chờ bắt lại...");
+      buzzerCancel();
+    }
+  } else {
+    // 2. ĐÃ BẮT ĐƯỢC BLUETOOTH ("BẮT ĐƯỢC RỒI")!
+    if (!wasConnected) {
+      wasConnected = true;
+      Serial.println("\n========================================================");
+      Serial.println("[BLE] >>> ĐÃ BẮT ĐƯỢC BLUETOOTH THÀNH CÔNG! <<<");
+      Serial.println("[LED] >>> THAY ĐỔI ĐÈN: CHUYỂN SANG MÀU XANH LÁ (CONNECTED)! <<<");
+      Serial.println("========================================================");
+
+      // THAY ĐỔI ĐÈN: Chuyển sang màu Xanh Lá (GREEN) sáng cố định báo đã kết nối
+      setLed(COLOR_GREEN);
+
+      // Bíp âm thanh chào mừng kết nối thành công
+      buzzerSuccess();
+    }
+  }
+#endif
+
+  // 3. Đọc cử chỉ phím SW1 nếu người dùng bấm
+  if (digitalRead(PIN_BTN_ORDER) == LOW) {
+    GestureType gesture = scanButtonGesture(false);
+    processGesture(gesture);
+
+    // Khôi phục trạng thái đèn tương ứng sau khi xong cử chỉ
+#if ENABLE_BLE
+    if (bleDeviceConnected) {
+      setLed(COLOR_GREEN);
+    } else {
+      setLed(COLOR_BLUE);
+    }
+#endif
+  }
+
+  delay(20);
 }

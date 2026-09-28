@@ -29,15 +29,19 @@ void StateMachine::init() {
   ButtonManager::init();
   PowerManager::init();
 
-  // Hiệu ứng khởi động hệ thống: LED Trắng nhẹ 100ms & bíp khởi động
-  LedManager::setColor(LED_WHITE);
+  // Hiệu ứng khởi động hệ thống
   BuzzerManager::beepBoot();
-  delay(100);
-  LedManager::setColor(LED_OFF);
 
   uint32_t batteryMv = PowerManager::readBatteryMillivolts();
   uint8_t batteryPct = PowerManager::calculateBatteryPercentage(batteryMv);
   Serial.printf("[POWER] MAX17048 Fuel Gauge: %u mV (%u%%)\n", batteryMv, batteryPct);
+
+  // ⚡ PHÁT SÓNG BLUETOOTH NGAY KHI VỪA NẠP CODE XONG / KHỞI ĐỘNG
+  String bleName = "SOB-" + DEVICE_ID;
+  Serial.printf("\n[BLE] >>> KHỞI ĐỘNG PHÁT SÓNG BLUETOOTH: '%s' <<<\n", bleName.c_str());
+  Serial.println("[BLE] Đèn LED Xanh dương nhấp nháy: Đang chờ điện thoại/thiết bị kết nối Bluetooth...");
+  Serial.println("[BLE] Khi điện thoại bắt được kết nối -> Đèn sẽ tự động đổi màu XANH LÁ!");
+  BLEProvisioning::start(bleName, DEVICE_ID);
 
   // Nếu người dùng đang giữ nút trong lúc cắm nguồn (Cold boot gesture)
   if (ButtonManager::isPressed()) {
@@ -47,13 +51,58 @@ void StateMachine::init() {
 }
 
 void StateMachine::loop() {
-  // Đi vào chế độ ngủ tiết kiệm điện (Light Sleep qua IO39 hoặc Deep Sleep qua RTC IO10)
-  PowerManager::enterSleep();
+  static unsigned long lastBlinkMs = 0;
+  static bool blinkState = false;
+  static bool wasConnected = false;
 
-  // Khi bấm nút SW1, ESP32-S3 thức dậy ngay lập tức!
-  // Đọc cử chỉ phím với cờ wokenFromSleep = true
-  ButtonGesture gesture = ButtonManager::detectGesture(true);
-  handleGesture(gesture);
+  bool isConnected = BLEProvisioning::isConnected();
+
+  if (!isConnected) {
+    // 1. CHƯA BẮT ĐƯỢC BLUETOOTH:
+    // Đèn LED nhấp nháy màu XANH DƯƠNG (Blue) chu kỳ 500ms báo đang phát Bluetooth chờ bắt
+    if (millis() - lastBlinkMs >= 500) {
+      lastBlinkMs = millis();
+      blinkState = !blinkState;
+      LedManager::setColor(blinkState ? LED_BLUE : LED_OFF);
+    }
+
+    // Nếu trước đó đang kết nối mà bị ngắt kết nối
+    if (wasConnected) {
+      wasConnected = false;
+      Serial.println("\n[BLE] Thiết bị đã ngắt kết nối! Đèn nhấp nháy Xanh dương chờ bắt lại...");
+      BuzzerManager::beepCancel();
+    }
+  } else {
+    // 2. ĐÃ BẮT ĐƯỢC BLUETOOTH ("BẮT ĐƯỢC RỒI")!
+    if (!wasConnected) {
+      wasConnected = true;
+      Serial.println("\n========================================================");
+      Serial.println("[BLE] >>> ĐÃ BẮT ĐƯỢC BLUETOOTH THÀNH CÔNG! <<<");
+      Serial.println("[LED] >>> THAY ĐỔI ĐÈN: CHUYỂN SANG MÀU XANH LÁ (CONNECTED)! <<<");
+      Serial.println("========================================================");
+
+      // THAY ĐỔI ĐÈN: Chuyển sang màu Xanh Lá (GREEN) sáng cố định báo đã kết nối
+      LedManager::setColor(LED_GREEN);
+
+      // Bíp âm thanh chào mừng kết nối thành công
+      BuzzerManager::beepSuccess();
+    }
+  }
+
+  // 3. Đọc cử chỉ phím SW1 nếu người dùng bấm
+  if (ButtonManager::isPressed()) {
+    ButtonGesture gesture = ButtonManager::detectGesture(false);
+    handleGesture(gesture);
+
+    // Khôi phục trạng thái đèn tương ứng với Bluetooth sau khi thực hiện xong cử chỉ
+    if (BLEProvisioning::isConnected()) {
+      LedManager::setColor(LED_GREEN);
+    } else {
+      LedManager::setColor(LED_BLUE);
+    }
+  }
+
+  delay(20);
 }
 
 void StateMachine::run() {
@@ -78,9 +127,9 @@ void StateMachine::handleGesture(ButtonGesture gesture) {
     return;
   }
 
-  // 2. Gesture: 5 Clicks (Quick Pairing) hoặc Hold 10s hoặc chưa có thông tin Wi-Fi -> Bật BLE & SoftAP
-  if (gesture == GESTURE_FIVE_CLICKS_PAIR || gesture == GESTURE_HOLD_10S_PROVISION || !WiFiManager::hasCredentials()) {
-    Serial.println("[MODE] BLUE LED: 5-Clicks or Provision detected -> Starting BLE Auto-Pairing");
+  // 2. Gesture: 5 Clicks (Quick Pairing) hoặc Hold 10s -> Bật BLE & SoftAP Captive Portal
+  if (gesture == GESTURE_FIVE_CLICKS_PAIR || gesture == GESTURE_HOLD_10S_PROVISION) {
+    Serial.println("[MODE] BLUE LED: 5-Clicks or Provision detected -> Starting BLE Auto-Pairing & SoftAP");
     LedManager::setColor(LED_BLUE);
     BuzzerManager::beepBoot();
 
@@ -105,9 +154,8 @@ void StateMachine::handleGesture(ButtonGesture gesture) {
       }
     }
 
-    BLEProvisioning::stop();
     WiFiManager::stopWiFi();
-    LedManager::setColor(LED_OFF);
+    BLEProvisioning::startAdvertising();
     return;
   }
 
