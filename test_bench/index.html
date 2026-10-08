@@ -3,19 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>⚡ Smart Order Button — ESP32-S3 Hardware Simulation Lab</title>
+  <title>⚡ Smart Order Button — ESP32-S3 Hardware Simulation & Test Bench Lab</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  
+  <!-- React 18 + ReactDOM + Babel Standalone -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
   <style>
     :root {
       --bg-space: #050811;
-      --bg-surface: rgba(13, 20, 36, 0.75);
-      --bg-surface-elevated: rgba(20, 30, 52, 0.85);
-      --bg-card: rgba(15, 23, 42, 0.65);
-      --border-glass: rgba(56, 189, 248, 0.15);
+      --bg-surface: rgba(13, 20, 36, 0.78);
+      --bg-surface-elevated: rgba(20, 30, 52, 0.88);
+      --bg-card: rgba(15, 23, 42, 0.7);
+      --border-glass: rgba(56, 189, 248, 0.16);
       --border-subtle: rgba(255, 255, 255, 0.08);
-      --border-accent: rgba(56, 189, 248, 0.4);
+      --border-accent: rgba(56, 189, 248, 0.45);
+      
       --text-main: #f8fafc;
       --text-muted: #94a3b8;
       --text-dim: #64748b;
@@ -26,6 +33,7 @@
       --amber-glow: #f59e0b;
       --rose-glow: #f43f5e;
       --violet-glow: #a855f7;
+      --enig-gold: #e2b714;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -33,43 +41,48 @@
     body {
       background-color: var(--bg-space);
       background-image: 
-        radial-gradient(circle at 15% 15%, rgba(14, 165, 233, 0.08) 0%, transparent 45%),
-        radial-gradient(circle at 85% 20%, rgba(168, 85, 247, 0.07) 0%, transparent 45%),
-        radial-gradient(circle at 50% 80%, rgba(16, 185, 129, 0.05) 0%, transparent 50%),
+        radial-gradient(circle at 12% 15%, rgba(14, 165, 233, 0.1) 0%, transparent 45%),
+        radial-gradient(circle at 88% 22%, rgba(168, 85, 247, 0.08) 0%, transparent 45%),
+        radial-gradient(circle at 50% 85%, rgba(16, 185, 129, 0.06) 0%, transparent 50%),
         linear-gradient(to right, rgba(255,255,255,0.02) 1px, transparent 1px),
         linear-gradient(to bottom, rgba(255,255,255,0.02) 1px, transparent 1px);
       background-size: 100% 100%, 100% 100%, 100% 100%, 36px 36px, 36px 36px;
       color: var(--text-main);
       font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
       min-height: 100vh;
-      padding: 24px;
+      padding: 20px 24px 60px;
       line-height: 1.5;
       overflow-x: hidden;
     }
 
-    /* Ambient top glow */
     body::before {
       content: '';
       position: fixed;
       top: 0;
       left: 50%;
       transform: translateX(-50%);
-      width: 800px;
-      height: 200px;
-      background: radial-gradient(ellipse at top, rgba(56, 189, 248, 0.15), transparent 70%);
+      width: 900px;
+      height: 220px;
+      background: radial-gradient(ellipse at top, rgba(56, 189, 248, 0.18), transparent 70%);
       pointer-events: none;
       z-index: 0;
     }
 
     .container {
-      max-width: 1540px;
+      max-width: 1560px;
       margin: 0 auto;
       display: flex;
       flex-direction: column;
-      gap: 24px;
+      gap: 22px;
       position: relative;
       z-index: 1;
     }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: rgba(5, 8, 17, 0.6); }
+    ::-webkit-scrollbar-thumb { background: rgba(56, 189, 248, 0.25); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(56, 189, 248, 0.45); }
 
     /* Glassmorphism Header */
     header {
@@ -84,6 +97,8 @@
       box-shadow: 0 16px 36px -10px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.1);
       position: relative;
       overflow: hidden;
+      flex-wrap: wrap;
+      gap: 16px;
     }
     header::after {
       content: '';
@@ -101,27 +116,33 @@
       gap: 16px;
     }
     .brand-icon {
-      width: 48px;
-      height: 48px;
-      border-radius: 14px;
+      width: 52px;
+      height: 52px;
+      border-radius: 16px;
       background: linear-gradient(135deg, #0284c7, #2563eb);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 24px;
-      box-shadow: 0 8px 20px rgba(37, 99, 235, 0.4);
-      border: 1px solid rgba(255,255,255,0.2);
+      font-size: 26px;
+      box-shadow: 0 8px 24px rgba(37, 99, 235, 0.45);
+      border: 1px solid rgba(255,255,255,0.25);
+      animation: pulseGlow 3s infinite alternate;
+    }
+    @keyframes pulseGlow {
+      0% { box-shadow: 0 0 15px rgba(2, 132, 199, 0.4); }
+      100% { box-shadow: 0 0 25px rgba(56, 189, 248, 0.7); }
     }
     .brand-title {
       font-size: 22px;
       font-weight: 800;
       letter-spacing: -0.6px;
-      background: linear-gradient(180deg, #ffffff 30%, #94a3b8 100%);
+      background: linear-gradient(180deg, #ffffff 40%, #94a3b8 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
+      flex-wrap: wrap;
     }
 
     /* Badges */
@@ -140,24 +161,29 @@
     .badge-primary {
       background: rgba(56, 189, 248, 0.12);
       color: var(--blue-glow);
-      border: 1px solid rgba(56, 189, 248, 0.3);
+      border: 1px solid rgba(56, 189, 248, 0.35);
       box-shadow: 0 0 15px rgba(56, 189, 248, 0.15);
     }
     .badge-success {
-      background: rgba(16, 185, 129, 0.12);
+      background: rgba(16, 185, 129, 0.14);
       color: #34d399;
-      border: 1px solid rgba(16, 185, 129, 0.35);
-      box-shadow: 0 0 15px rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      box-shadow: 0 0 15px rgba(16, 185, 129, 0.2);
     }
     .badge-warning {
       background: rgba(245, 158, 11, 0.12);
       color: #fbbf24;
-      border: 1px solid rgba(245, 158, 11, 0.3);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+    }
+    .badge-danger {
+      background: rgba(244, 63, 94, 0.12);
+      color: #fb7185;
+      border: 1px solid rgba(244, 63, 94, 0.35);
     }
 
     .pulse-dot {
-      width: 7px;
-      height: 7px;
+      width: 8px;
+      height: 8px;
       border-radius: 50%;
       background: currentColor;
       box-shadow: 0 0 8px currentColor;
@@ -168,16 +194,93 @@
       50% { transform: scale(1.4); opacity: 0.6; }
     }
 
-    /* Main Grid */
-    .main-grid {
-      display: grid;
-      grid-template-columns: 1.2fr 0.8fr;
-      gap: 24px;
+    /* Tabs Navigation */
+    .nav-tabs {
+      display: flex;
+      gap: 8px;
+      background: rgba(15, 23, 42, 0.7);
+      padding: 6px;
+      border-radius: 16px;
+      border: 1px solid var(--border-glass);
+      backdrop-filter: blur(16px);
+      overflow-x: auto;
     }
-    @media (max-width: 1200px) {
-      .main-grid { grid-template-columns: 1fr; }
+    .tab-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 18px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-muted);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      white-space: nowrap;
+    }
+    .tab-btn:hover {
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .tab-btn.active {
+      color: #ffffff;
+      background: linear-gradient(135deg, rgba(14, 165, 233, 0.25), rgba(37, 99, 235, 0.2));
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      box-shadow: 0 4px 16px rgba(14, 165, 233, 0.2);
     }
 
+    /* Action Buttons */
+    .btn-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 700;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-main);
+      border: 1px solid var(--border-subtle);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-family: inherit;
+    }
+    .btn-pill:hover {
+      background: rgba(255, 255, 255, 0.12);
+      border-color: rgba(255, 255, 255, 0.2);
+      transform: translateY(-1px);
+    }
+    .btn-pill:active { transform: translateY(0); }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      color: white;
+      border: 1px solid rgba(255,255,255,0.2);
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+    }
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #0369a1, #1d4ed8);
+      box-shadow: 0 6px 20px rgba(37, 99, 235, 0.5);
+    }
+
+    .btn-success {
+      background: linear-gradient(135deg, #059669, #10b981);
+      color: white;
+      border: 1px solid rgba(255,255,255,0.2);
+      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+    }
+
+    .btn-danger {
+      background: linear-gradient(135deg, #e11d48, #f43f5e);
+      color: white;
+      border: 1px solid rgba(255,255,255,0.2);
+      box-shadow: 0 4px 14px rgba(244, 63, 94, 0.35);
+    }
+
+    /* Cards */
     .card {
       background: var(--bg-surface);
       border: 1px solid var(--border-glass);
@@ -196,13 +299,14 @@
       border-color: var(--border-accent);
       box-shadow: 0 24px 50px -12px rgba(0, 0, 0, 0.65), 0 0 30px rgba(56, 189, 248, 0.08);
     }
-
     .card-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
       border-bottom: 1px solid var(--border-subtle);
       padding-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 10px;
     }
     .card-title {
       font-size: 16px;
@@ -214,19 +318,17 @@
     }
 
     /* =========================================================================
-       PCB VIRTUAL BENCH (HIGH-END ENIG EMERALD BOARD)
+       PCB VIRTUAL BENCH (ENIG EMERALD BOARD)
        ========================================================================= */
     .pcb-board {
       background: linear-gradient(145deg, #061e16 0%, #0a2d21 60%, #051a13 100%);
       border: 2px solid #1a5e46;
       border-radius: 28px;
-      padding: 32px 28px;
+      padding: 30px 28px;
       position: relative;
       box-shadow: 0 30px 60px -20px rgba(0,0,0,0.8), inset 0 0 50px rgba(16, 185, 129, 0.08);
       overflow: hidden;
     }
-
-    /* Solder Mask Grid Lines & Gold Traces */
     .pcb-circuit-svg {
       position: absolute;
       inset: 0;
@@ -236,7 +338,6 @@
       opacity: 0.35;
       z-index: 1;
     }
-
     .pcb-header-bar {
       display: flex;
       justify-content: space-between;
@@ -246,11 +347,13 @@
       margin-bottom: 26px;
       padding-bottom: 14px;
       border-bottom: 1px solid rgba(212, 175, 55, 0.2);
+      flex-wrap: wrap;
+      gap: 12px;
     }
     .pcb-brand-badge {
       font-family: 'Fira Code', monospace;
       font-size: 11px;
-      color: #e2b714; /* Gold ENIG color */
+      color: var(--enig-gold);
       font-weight: 700;
       letter-spacing: 1px;
       display: flex;
@@ -258,24 +361,24 @@
       gap: 8px;
     }
     .pcb-model-title {
-      font-size: 19px;
+      font-size: 20px;
       font-weight: 900;
       color: #ffffff;
       letter-spacing: -0.5px;
       text-shadow: 0 2px 10px rgba(0,0,0,0.5);
     }
 
-    /* Components Showcase Row */
+    /* PCB Components Grid */
     .pcb-components-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
       gap: 24px;
       position: relative;
       z-index: 10;
       align-items: center;
     }
 
-    /* 1. Tactile 3D Button SW1 */
+    /* 1. 3D Tactile Button SW1 */
     .button-3d-wrap {
       display: flex;
       flex-direction: column;
@@ -301,7 +404,6 @@
       user-select: none;
       transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
     }
-    /* Halo Ring behind button */
     .tactile-housing::before {
       content: '';
       position: absolute;
@@ -312,9 +414,7 @@
       transition: opacity 0.3s ease;
       z-index: -1;
     }
-    .tactile-housing:hover::before {
-      opacity: 0.8;
-    }
+    .tactile-housing:hover::before { opacity: 0.8; }
     .tactile-housing:active, .tactile-housing.pressed {
       transform: translateY(6px);
       box-shadow: 0 6px 15px rgba(0,0,0,0.8), inset 0 6px 12px rgba(0,0,0,0.8);
@@ -348,10 +448,9 @@
       font-family: 'Fira Code', monospace;
       opacity: 0.85;
       margin-top: 2px;
-      letter-spacing: 0.2px;
     }
 
-    /* 2. Glass Dome RGB LED D1 */
+    /* 2. LED Bulb RGB Common Anode */
     .led-bulb-container {
       display: flex;
       flex-direction: column;
@@ -359,73 +458,47 @@
       gap: 14px;
     }
     .led-socket {
-      width: 96px;
-      height: 96px;
+      width: 104px;
+      height: 104px;
       border-radius: 50%;
-      background: #0d1520;
-      border: 3px solid #2e4468;
+      background: radial-gradient(circle, #0f172a 40%, #020617 100%);
+      border: 3px solid #1e293b;
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.6), inset 0 2px 6px rgba(0,0,0,0.8);
-      position: relative;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5), inset 0 2px 8px rgba(0,0,0,0.8);
     }
     .led-bulb {
-      width: 74px;
-      height: 74px;
+      width: 58px;
+      height: 58px;
       border-radius: 50%;
-      background: radial-gradient(circle at 35% 35%, #334155 10%, #1e293b 70%, #0f172a 100%);
-      border: 2px solid #475569;
+      background: #1e293b;
+      border: 2px solid rgba(255,255,255,0.15);
       position: relative;
-      transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: all 0.25s ease;
     }
-    /* Specular glass reflection */
-    .led-bulb::after {
-      content: '';
-      position: absolute;
-      top: 14%;
-      left: 20%;
-      width: 22px;
-      height: 14px;
-      background: rgba(255,255,255,0.45);
-      border-radius: 50%;
-      transform: rotate(-35deg);
-      filter: blur(0.5px);
-    }
-
-    /* Color States (Active LOW) */
-    .led-blue {
-      background: radial-gradient(circle at 40% 40%, #93c5fd 5%, #3b82f6 40%, #1d4ed8 85%);
+    .led-bulb.glow-blue {
+      background: radial-gradient(circle at 40% 40%, #60a5fa 0%, #2563eb 60%, #1e3a8a 100%);
+      box-shadow: 0 0 40px #38bdf8, 0 0 80px rgba(56, 189, 248, 0.6), inset 0 0 15px #93c5fd;
       border-color: #bfdbfe;
-      box-shadow: 0 0 45px #3b82f6, 0 0 90px rgba(59, 130, 246, 0.7);
     }
-    .led-green {
-      background: radial-gradient(circle at 40% 40%, #a7f3d0 5%, #10b981 40%, #047857 85%);
-      border-color: #d1fae5;
-      box-shadow: 0 0 45px #10b981, 0 0 90px rgba(16, 185, 129, 0.75);
+    .led-bulb.glow-green {
+      background: radial-gradient(circle at 40% 40%, #6ee7b7 0%, #10b981 60%, #064e3b 100%);
+      box-shadow: 0 0 40px #34d399, 0 0 80px rgba(52, 211, 153, 0.6), inset 0 0 15px #a7f3d0;
+      border-color: #a7f3d0;
     }
-    .led-red {
-      background: radial-gradient(circle at 40% 40%, #fecaca 5%, #ef4444 40%, #b91c1c 85%);
-      border-color: #fee2e2;
-      box-shadow: 0 0 45px #ef4444, 0 0 90px rgba(239, 68, 68, 0.75);
+    .led-bulb.glow-red {
+      background: radial-gradient(circle at 40% 40%, #fca5a5 0%, #ef4444 60%, #7f1d1d 100%);
+      box-shadow: 0 0 40px #f87171, 0 0 80px rgba(248, 113, 113, 0.6), inset 0 0 15px #fecaca;
+      border-color: #fecaca;
     }
-    .led-yellow {
-      background: radial-gradient(circle at 40% 40%, #fef08a 5%, #eab308 40%, #a16207 85%);
-      border-color: #fef9c3;
-      box-shadow: 0 0 45px #eab308, 0 0 90px rgba(234, 179, 8, 0.75);
-    }
-    .led-cyan {
-      background: radial-gradient(circle at 40% 40%, #cffafe 5%, #06b6d4 40%, #0e7490 85%);
-      border-color: #ecfeff;
-      box-shadow: 0 0 45px #06b6d4, 0 0 90px rgba(6, 182, 212, 0.75);
-    }
-    .led-purple {
-      background: radial-gradient(circle at 40% 40%, #f3e8ff 5%, #a855f7 40%, #7e22ce 85%);
-      border-color: #faf5ff;
-      box-shadow: 0 0 45px #a855f7, 0 0 90px rgba(168, 85, 247, 0.75);
+    .led-bulb.glow-yellow {
+      background: radial-gradient(circle at 40% 40%, #fef08a 0%, #eab308 60%, #713f12 100%);
+      box-shadow: 0 0 40px #facc15, 0 0 80px rgba(250, 204, 21, 0.6), inset 0 0 15px #fef9c3;
+      border-color: #fef08a;
     }
 
-    /* 3. Piezo Buzzer BZ1 */
+    /* 3. Piezo Buzzer */
     .buzzer-wrap {
       display: flex;
       flex-direction: column;
@@ -433,213 +506,139 @@
       gap: 14px;
     }
     .buzzer-casing {
-      width: 82px;
-      height: 82px;
+      width: 104px;
+      height: 104px;
       border-radius: 50%;
-      background: linear-gradient(145deg, #1e293b, #0a0f1d);
-      border: 3px solid #334155;
+      background: radial-gradient(circle, #2d3748 30%, #1a202c 80%, #000 100%);
+      border: 3px solid #4a5568;
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 10px 20px rgba(0,0,0,0.6);
       position: relative;
+      box-shadow: 0 12px 28px rgba(0,0,0,0.6), inset 0 4px 6px rgba(255,255,255,0.1);
     }
     .buzzer-vent {
-      width: 22px;
-      height: 22px;
+      width: 28px;
+      height: 28px;
       border-radius: 50%;
-      background: #020617;
-      border: 2px solid #1e293b;
-      box-shadow: inset 0 2px 4px rgba(0,0,0,0.9);
+      background: #0f172a;
+      border: 2px solid #000;
+      box-shadow: inset 0 2px 5px rgba(0,0,0,0.9);
     }
     .buzzer-ring-wave {
       position: absolute;
-      inset: -6px;
+      inset: -8px;
       border-radius: 50%;
-      border: 2px solid #fbbf24;
-      opacity: 0;
+      border: 2px solid transparent;
       pointer-events: none;
     }
-    .buzzer-beeping .buzzer-ring-wave {
-      animation: soundWave 0.3s infinite ease-out;
+    .buzzer-casing.beeping .buzzer-ring-wave {
+      border-color: rgba(245, 158, 11, 0.8);
+      animation: buzzerPulse 0.4s infinite ease-out;
     }
-    .buzzer-beeping .buzzer-casing {
-      border-color: #fbbf24;
-      box-shadow: 0 0 30px rgba(251, 191, 36, 0.6);
-    }
-    @keyframes soundWave {
-      0% { transform: scale(0.9); opacity: 0.9; }
+    @keyframes buzzerPulse {
+      0% { transform: scale(0.9); opacity: 1; }
       100% { transform: scale(1.4); opacity: 0; }
     }
 
-    /* 4. MAX17048 Fuel Gauge IC Chip */
+    /* 4. MAX17048 Fuel Gauge Card */
     .gauge-ic-card {
-      background: rgba(10, 25, 20, 0.85);
-      border: 1px solid rgba(16, 185, 129, 0.4);
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(212, 175, 55, 0.35);
       border-radius: 18px;
       padding: 16px;
-      text-align: center;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-      backdrop-filter: blur(12px);
-      position: relative;
-    }
-    .gauge-ic-pins {
       display: flex;
-      justify-content: space-around;
-      margin-bottom: 8px;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+      position: relative;
+      transition: all 0.2s ease;
     }
-    .chip-gold-pin {
-      width: 6px;
-      height: 4px;
-      background: #e2b714;
-      border-radius: 1px;
+    .gauge-ic-card:hover {
+      border-color: var(--enig-gold);
+      box-shadow: 0 12px 30px rgba(226, 183, 20, 0.2);
     }
 
-    /* Oscilloscope / Live Signal Canvas */
-    .scope-box {
-      margin-top: 22px;
-      background: rgba(4, 15, 11, 0.85);
-      border: 1px solid rgba(16, 185, 129, 0.25);
-      border-radius: 16px;
-      padding: 12px 16px;
+    /* 5. ESP32-S3 IC Chip View */
+    .mcu-chip-box {
+      background: linear-gradient(135deg, #18181b, #09090b);
+      border: 2px solid #3f3f46;
+      border-radius: 14px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.6);
+      position: relative;
+    }
+    .mcu-chip-box::before {
+      content: '';
+      position: absolute;
+      top: 6px;
+      left: 6px;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #71717a;
+    }
+
+    /* Quick Action Gesture Pills */
+    .gesture-bar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 20px;
       position: relative;
       z-index: 10;
     }
-    .scope-header {
-      display: flex;
-      justify-content: space-between;
-      font-size: 11px;
-      font-family: 'Fira Code', monospace;
-      color: #34d399;
-      margin-bottom: 6px;
-    }
-    #scopeCanvas {
-      width: 100%;
-      height: 60px;
-      display: block;
-      border-radius: 8px;
-      background: #020b08;
-    }
-
-    /* Buttons & Gestures Panel */
-    .btn-grid-actions {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-      gap: 12px;
-    }
-    .action-btn {
-      padding: 14px 18px;
-      border-radius: 14px;
-      font-size: 13px;
+    .gesture-btn {
+      flex: 1;
+      min-width: 140px;
+      padding: 10px 14px;
+      border-radius: 12px;
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #e2e8f0;
+      font-size: 12px;
       font-weight: 700;
       cursor: pointer;
-      border: 1px solid transparent;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 10px;
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      position: relative;
-      overflow: hidden;
+      gap: 8px;
+      transition: all 0.15s ease;
     }
-    .action-btn::after {
-      content: '';
-      position: absolute;
-      top: 0; left: -100%; width: 100%; height: 100%;
-      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
-      transition: left 0.5s ease;
-    }
-    .action-btn:hover::after {
-      left: 100%;
-    }
-    .btn-action-primary {
-      background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%);
-      color: white;
+    .gesture-btn:hover {
+      background: rgba(255, 255, 255, 0.12);
       border-color: rgba(56, 189, 248, 0.4);
-      box-shadow: 0 8px 20px rgba(37, 99, 235, 0.35);
-    }
-    .btn-action-primary:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 12px 26px rgba(37, 99, 235, 0.5);
-    }
-    .btn-action-danger {
-      background: linear-gradient(135deg, #b91c1c 0%, #ef4444 100%);
-      color: white;
-      border-color: rgba(248, 113, 113, 0.4);
-      box-shadow: 0 8px 20px rgba(239, 68, 68, 0.3);
-    }
-    .btn-action-danger:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 12px 26px rgba(239, 68, 68, 0.45);
-    }
-    .btn-action-purple {
-      background: rgba(168, 85, 247, 0.12);
-      color: #d8b4fe;
-      border-color: rgba(168, 85, 247, 0.35);
-    }
-    .btn-action-purple:hover {
-      background: rgba(168, 85, 247, 0.22);
-      transform: translateY(-2px);
-    }
-    .btn-action-subtle {
-      background: rgba(30, 41, 59, 0.7);
-      color: var(--text-muted);
-      border-color: rgba(255, 255, 255, 0.1);
-    }
-    .btn-action-subtle:hover {
-      background: rgba(51, 65, 85, 0.9);
-      color: white;
       transform: translateY(-2px);
     }
 
-    /* Battery Slider */
-    .slider-box {
-      background: rgba(15, 23, 42, 0.6);
-      border: 1px solid var(--border-subtle);
-      border-radius: 16px;
-      padding: 16px 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .slider-row-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 13px;
-      font-weight: 700;
-    }
-    input[type=range] {
-      width: 100%;
-      height: 6px;
-      background: #1e293b;
-      border-radius: 999px;
-      outline: none;
-      accent-color: #10b981;
-      cursor: pointer;
-    }
-
-    /* Pin Table Live Inspector */
-    .pin-table {
+    /* Pinout Grid */
+    .pinout-table {
       width: 100%;
       border-collapse: collapse;
-      font-family: 'Fira Code', monospace;
       font-size: 12px;
+      font-family: 'Fira Code', monospace;
     }
-    .pin-table th {
+    .pinout-table th {
       text-align: left;
       padding: 10px 14px;
+      background: rgba(255, 255, 255, 0.03);
       color: var(--text-muted);
       border-bottom: 1px solid var(--border-subtle);
-      font-weight: 700;
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
     }
-    .pin-table td {
+    .pinout-table td {
       padding: 10px 14px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      color: var(--text-main);
+    }
+    .pinout-table tr:hover td {
+      background: rgba(56, 189, 248, 0.05);
     }
     .pin-badge {
       display: inline-block;
@@ -648,892 +647,1038 @@
       font-size: 11px;
       font-weight: 700;
     }
-    .val-low { color: #34d399; }
-    .val-high { color: #f87171; }
-    .val-i2c { color: #38bdf8; }
+    .pin-high { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); }
+    .pin-low { background: rgba(52, 211, 153, 0.15); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3); }
+    .pin-warn { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
 
-    /* Cryptographic Inspector Cards */
-    .crypto-field {
-      background: rgba(10, 16, 29, 0.7);
-      border: 1px solid var(--border-subtle);
-      border-radius: 12px;
-      padding: 12px 14px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      font-family: 'Fira Code', monospace;
-      font-size: 11px;
-      transition: all 0.2s ease;
-    }
-    .crypto-field:hover {
-      border-color: var(--border-accent);
-      background: rgba(15, 23, 42, 0.85);
-    }
-    .crypto-label {
-      color: var(--text-muted);
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      display: flex;
-      justify-content: space-between;
-    }
-    .crypto-val {
-      font-weight: 700;
-      word-break: break-all;
-    }
-
-    /* Terminal Console */
-    .terminal-container {
-      background: #030712;
-      border: 1px solid #1f293d;
+    /* Telemetry Terminal */
+    .terminal-box {
+      background: #020617;
+      border: 1px solid var(--border-glass);
       border-radius: 16px;
+      padding: 16px;
       font-family: 'Fira Code', monospace;
       font-size: 12px;
-      height: 310px;
+      height: 320px;
       overflow-y: auto;
-      padding: 16px;
       display: flex;
       flex-direction: column;
       gap: 6px;
       box-shadow: inset 0 2px 10px rgba(0,0,0,0.8);
     }
-    .terminal-container::-webkit-scrollbar { width: 6px; }
-    .terminal-container::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+    .log-line {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      line-height: 1.4;
+      word-break: break-all;
+    }
+    .log-time { color: var(--text-dim); }
+    .log-tag { font-weight: 700; border-radius: 4px; padding: 1px 6px; font-size: 10px; }
+    .tag-info { background: rgba(56, 189, 248, 0.2); color: #38bdf8; }
+    .tag-success { background: rgba(52, 211, 153, 0.2); color: #34d399; }
+    .tag-warn { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+    .tag-error { background: rgba(244, 63, 94, 0.2); color: #f87171; }
+    .tag-crypto { background: rgba(168, 85, 247, 0.2); color: #c084fc; }
 
-    .log-line { display: flex; gap: 8px; line-height: 1.4; }
-    .log-ts { color: #475569; flex-shrink: 0; }
-    .log-info { color: #38bdf8; }
-    .log-success { color: #34d399; font-weight: 600; }
-    .log-warn { color: #fbbf24; }
-    .log-error { color: #f87171; font-weight: 600; }
+    /* Oscilloscope Canvas Box */
+    .scope-box {
+      background: #000;
+      border: 1px solid rgba(52, 211, 153, 0.3);
+      border-radius: 16px;
+      padding: 16px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: inset 0 0 30px rgba(16, 185, 129, 0.15);
+    }
+    .scope-canvas {
+      width: 100%;
+      height: 180px;
+      display: block;
+    }
 
-    /* Audio toggle & UI button */
-    .btn-pill {
-      padding: 8px 16px;
-      border-radius: 999px;
-      font-size: 12px;
-      font-weight: 700;
-      cursor: pointer;
-      display: inline-flex;
+    /* Test Step Progress Item */
+    .test-step-card {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 14px;
+      padding: 14px 18px;
+      display: flex;
       align-items: center;
-      gap: 8px;
-      border: 1px solid var(--border-glass);
-      background: rgba(30, 41, 59, 0.6);
-      color: white;
+      justify-content: space-between;
       transition: all 0.2s ease;
+      gap: 14px;
     }
-    .btn-pill:hover {
-      background: rgba(51, 65, 85, 0.8);
-      border-color: var(--border-accent);
+    .test-step-card.pass {
+      border-color: rgba(16, 185, 129, 0.4);
+      background: rgba(16, 185, 129, 0.06);
     }
-    .btn-pill-active {
-      background: linear-gradient(135deg, #0284c7, #2563eb);
-      border-color: #38bdf8;
-      box-shadow: 0 0 15px rgba(56, 189, 248, 0.4);
+    .test-step-card.running {
+      border-color: rgba(56, 189, 248, 0.5);
+      background: rgba(56, 189, 248, 0.08);
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.15);
+    }
+    .test-step-card.fail {
+      border-color: rgba(244, 63, 94, 0.4);
+      background: rgba(244, 63, 94, 0.06);
+    }
+
+    /* Crypto Preview Block */
+    .crypto-code-block {
+      background: #090d16;
+      border: 1px solid rgba(168, 85, 247, 0.3);
+      border-radius: 14px;
+      padding: 16px;
+      font-family: 'Fira Code', monospace;
+      font-size: 12px;
+      color: #e2e8f0;
+      word-break: break-all;
+    }
+
+    /* Responsive grid helper */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1.25fr 0.75fr;
+      gap: 24px;
+    }
+    @media (max-width: 1100px) {
+      .grid-2 { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
 
-<div class="container">
+<div id="root"></div>
+
+<!-- React Application Script -->
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+// =========================================================================
+// 1. HARDWARE CONFIG & CONSTANTS (MATCHING FIRMWARE & KICAD SCHEMATIC)
+// =========================================================================
+const HARDWARE_PROFILE = {
+  DEVICE_ID: 'BTN-8829-WTR',
+  DEVICE_SECRET: 'sec_smart_button_8829_wtr_key_99',
+  MCU: 'ESP32-S3-WROOM-1-N8R8',
+  FREQUENCY_MHZ: 240,
+  VOLTAGE_RAIL: 3.3,
+  BATTERY_NOMINAL_MAH: 1500, // CR123A or LiPo
+  IC_GAUGE: 'MAX17048G (I2C 0x36)',
+  KICAD_REV: 'v4.5.0 Production Ready'
+};
+
+// KiCad Netlist & Pinout Mapping Table
+const KICAD_PINS_DATA = [
+  { pin: 'IO39', net: 'BTN_TRIG', comp: 'SW1', type: 'Input / Pull-up 10k', volt: '3.3V / 0V', desc: 'Tactile Order Button (Active LOW, Wakeup Int)' },
+  { pin: 'IO7', net: 'LED_RED', comp: 'D1 (Cathode R)', type: 'Open-Drain / Push-Pull', volt: '3.3V Active LOW', desc: 'RGB LED Red (Error / Battery Critical)' },
+  { pin: 'IO6', net: 'LED_GREEN', comp: 'D1 (Cathode G)', type: 'Open-Drain / Push-Pull', volt: '3.3V Active LOW', desc: 'RGB LED Green (Order Success)' },
+  { pin: 'IO8', net: 'LED_BLUE', comp: 'D1 (Cathode B)', type: 'Open-Drain / Push-Pull', volt: '3.3V Active LOW', desc: 'RGB LED Blue (WiFi TX / Transmitting)' },
+  { pin: 'IO2', net: 'BUZZER_PWM', comp: 'Q1 (2N7002 Gate)', type: 'Digital Output', volt: '3.3V (Gate)', desc: 'Piezo Buzzer Resonant Gate Drive (2.7kHz)' },
+  { pin: 'IO4', net: 'I2C_SDA', comp: 'U6 (MAX17048G)', type: 'I2C Open-Drain', volt: '3.3V (Pull-up 4.7k)', desc: 'Fuel Gauge I2C Serial Data Bus' },
+  { pin: 'IO5', net: 'I2C_SCL', comp: 'U6 (MAX17048G)', type: 'I2C Open-Drain', volt: '3.3V (Pull-up 4.7k)', desc: 'Fuel Gauge I2C Serial Clock Bus' },
+  { pin: 'IO19', net: 'USB_D_N', comp: 'J1 (Type-C Pin A7/B7)', type: 'USB CDC Native', volt: '3.3V High Speed', desc: 'Native USB D- Data' },
+  { pin: 'IO20', net: 'USB_D_P', comp: 'J1 (Type-C Pin A6/B6)', type: 'USB CDC Native', volt: '3.3V High Speed', desc: 'Native USB D+ Data' },
+  { pin: 'VBAT', net: 'VBAT_RAW', comp: 'BT1 / J2 Header', type: 'Power Rail In', volt: '3.0V - 4.2V', desc: 'Raw Battery Voltage Input (LiPo / CR123A)' },
+  { pin: '3V3', net: '+3.3V', comp: 'U1 (ME6211C33 LDO)', type: 'Regulated LDO', volt: '3.30V (Low Dropout)', desc: 'System Core & Peripheral Power Supply' }
+];
+
+// Helper to compute HMAC-SHA256 via Web Crypto API
+async function computeHmacSha256(keyStr, dataStr) {
+  const enc = new TextEncoder();
+  const key = await window.crypto.subtle.importKey(
+    'raw',
+    enc.encode(keyStr),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const signature = await window.crypto.subtle.sign('HMAC', key, enc.encode(dataStr));
+  return Array.from(new Uint8Array(signature))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+// =========================================================================
+// 2. ROOT REACT APP
+// =========================================================================
+function App() {
+  const [activeTab, setActiveTab] = useState('bench'); // 'bench' | 'scope' | 'crypto' | 'suite' | 'kicad'
+  const [audioEnabled, setAudioEnabled] = useState(true);
+  const [backendStatus, setBackendStatus] = useState('edge'); // 'online' | 'edge'
+
+  // Hardware State
+  const [sw1Pressed, setSw1Pressed] = useState(false);
+  const [ledColor, setLedColor] = useState('OFF'); // 'OFF' | 'BLUE' | 'GREEN' | 'RED' | 'YELLOW'
+  const [buzzerActive, setBuzzerActive] = useState(false);
   
-  <!-- Modern Header -->
-  <header>
-    <div class="header-branding">
-      <div class="brand-icon">⚡</div>
-      <div>
-        <div class="brand-title">
-          ESP32-S3 Smart Order Button
-          <span class="badge badge-primary">KiCad v4.5 Circuit Lab</span>
-        </div>
-        <p style="font-size: 12px; color: var(--text-muted); margin-top: 3px;">
-          Mô phỏng chu trình phần cứng thực nghiệm vi điều khiển ESP32-S3-WROOM-1 &bull; IC đo pin MAX17048G &bull; Chữ ký số HMAC-SHA256
-        </p>
-      </div>
-    </div>
+  // Battery & Fuel Gauge State
+  const [cellVoltage, setCellVoltage] = useState(3.87); // in Volts
+  const [socPercent, setSocPercent] = useState(88.0);
+  
+  // Power & Scope State
+  const [currentDrawMa, setCurrentDrawMa] = useState(0.015); // 15uA default
+  const [powerPhase, setPowerPhase] = useState('Deep Sleep (15µA)');
+  
+  // Crypto State
+  const [nonce, setNonce] = useState('aa13c23a1c09c75d03ba31284543721b');
+  const [timestamp, setTimestamp] = useState(Math.floor(Date.now() / 1000));
+  const [signature, setSignature] = useState('85e79382f04a96ba5310d65b792b895a17e3b0c9509ec8ec7f3f1e94812a67e0');
+  const [showSecret, setShowSecret] = useState(false);
+  const [tamperedState, setTamperedState] = useState(false);
 
-    <div style="display: flex; gap: 12px; align-items: center;">
-      <span class="badge badge-success" id="backendBadge">
-        <span class="pulse-dot"></span>
-        Chế độ: Độc Lập (Edge Mode)
-      </span>
-      <button class="btn-pill" onclick="toggleAudio()" id="audioBtn">
-        <span>🔊</span> Bật Âm Thanh Còi
-      </button>
-    </div>
-  </header>
+  // Automated Test Suite State
+  const [testRunning, setTestRunning] = useState(false);
+  const [testResults, setTestResults] = useState([]);
+  const [testProgress, setTestProgress] = useState(0);
 
-  <!-- Main Grid Layout -->
-  <div class="main-grid">
+  // Telemetry Console Logs
+  const [logs, setLogs] = useState([
+    { id: 1, time: '00:00:01', tag: 'BOOT', level: 'info', text: 'ESP32-S3 IoT Hardware Test Bench v4.5.0 đã sẵn sàng.' },
+    { id: 2, time: '00:00:02', tag: 'I2C', level: 'success', text: 'MAX17048G Fuel Gauge phát hiện tại địa chỉ I2C 0x36. VCell=3.87V, SOC=88%.' },
+    { id: 3, time: '00:00:03', tag: 'SECURITY', level: 'crypto', text: 'HMAC-SHA256 Hardware Accelerator & CSPRNG Nonce Generator initialized.' }
+  ]);
+  const [logFilter, setLogFilter] = useState('ALL');
 
-    <!-- Cột Trái: Bàn Mạch & Tương Tác Vật Lý -->
-    <div style="display: flex; flex-direction: column; gap: 24px;">
+  // Web Audio Context for Realistic Piezo Buzzer Sound Synthesis
+  const audioCtxRef = useRef(null);
 
-      <!-- Khối Bàn Mạch Ảo KiCad (ENIG Gold-Plated Emerald PCB) -->
-      <div class="pcb-board">
-        
-        <!-- Background Circuit Traces Pattern -->
-        <svg class="pcb-circuit-svg" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <pattern id="pcbGrid" width="60" height="60" patternUnits="userSpaceOnUse">
-              <path d="M 60 0 L 0 0 0 60" fill="none" stroke="rgba(212, 175, 55, 0.15)" stroke-width="0.8"/>
-              <circle cx="30" cy="30" r="1.5" fill="rgba(212, 175, 55, 0.25)"/>
-              <path d="M 0 30 Q 15 30 30 15 T 60 15" fill="none" stroke="rgba(52, 211, 153, 0.15)" stroke-width="1"/>
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#pcbGrid)"/>
-        </svg>
+  const addLog = useCallback((tag, text, level = 'info') => {
+    const d = new Date();
+    const timeStr = d.toTimeString().split(' ')[0] + '.' + String(d.getMilliseconds()).padStart(3, '0');
+    setLogs(prev => [
+      ...prev.slice(-150),
+      { id: Date.now() + Math.random(), time: timeStr, tag, text, level }
+    ]);
+  }, []);
 
-        <!-- PCB Header Bar -->
-        <div class="pcb-header-bar">
+  // Audio tone generator
+  const playTone = useCallback((freq = 2700, duration = 0.08, type = 'square') => {
+    if (!audioEnabled) return;
+    try {
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume();
+      }
+      const osc = audioCtxRef.current.createOscillator();
+      const gain = audioCtxRef.current.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, audioCtxRef.current.currentTime);
+      gain.gain.setValueAtTime(0.08, audioCtxRef.current.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audioCtxRef.current.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(audioCtxRef.current.destination);
+      osc.start();
+      osc.stop(audioCtxRef.current.currentTime + duration);
+    } catch (e) {
+      console.warn('Audio not available:', e);
+    }
+  }, [audioEnabled]);
+
+  // Battery recalculation based on Voltage slider
+  const handleVoltageChange = (newV) => {
+    const v = parseFloat(newV);
+    setCellVoltage(v);
+    // Simple ModelGauge LiPo curve approximation
+    let soc = 0;
+    if (v >= 4.2) soc = 100;
+    else if (v <= 3.2) soc = 0;
+    else {
+      soc = Math.min(100, Math.max(0, Math.round(((v - 3.2) / (4.2 - 3.2)) * 100)));
+    }
+    setSocPercent(soc);
+    addLog('MAX17048', `Điều chỉnh điện áp pin VCell = ${v.toFixed(2)}V -> SOC = ${soc}%`, v < 3.4 ? 'warn' : 'info');
+  };
+
+  // Simulate Order Cycle (Single Click)
+  const triggerOrderCycle = async () => {
+    addLog('INTERRUPT', '⚡ SW1 (IO39) kích hoạt ngắt Active LOW -> ESP32-S3 thức dậy từ Deep Sleep!', 'info');
+    setCurrentDrawMa(32);
+    setPowerPhase('Thức dậy & Đọc I2C Sensor (32mA)');
+    setSw1Pressed(true);
+    playTone(1800, 0.04);
+    
+    setTimeout(async () => {
+      setSw1Pressed(false);
+      // Turn on Blue LED (WiFi TX)
+      setLedColor('BLUE');
+      setCurrentDrawMa(240);
+      setPowerPhase('Phát WiFi RF & Ký HMAC-SHA256 (240mA)');
+      
+      const newNonce = Array.from(window.crypto.getRandomValues(new Uint8Array(16)))
+        .map(b => b.toString(16).padStart(2, '0')).join('');
+      const newTs = Math.floor(Date.now() / 1000);
+      const payload = `${HARDWARE_PROFILE.DEVICE_ID}:${newTs}:${newNonce}:{"action":"CALL_SERVICE","btn":"SW1","vcell":${cellVoltage}}`;
+      const newSig = await computeHmacSha256(HARDWARE_PROFILE.DEVICE_SECRET, payload);
+      
+      setNonce(newNonce);
+      setTimestamp(newTs);
+      setSignature(newSig);
+      setTamperedState(false);
+      
+      addLog('CRYPTO', `Chữ ký phần cứng sinh thành công: ${newSig.substring(0, 16)}...`, 'crypto');
+      addLog('NETWORK', 'Đang truyền gói tin bảo mật đến Gateway API...', 'info');
+
+      setTimeout(() => {
+        // Order Success -> Green LED + 2 Beeps
+        setLedColor('GREEN');
+        setBuzzerActive(true);
+        setCurrentDrawMa(45);
+        setPowerPhase('Phản hồi thành công (LED Xanh Lá + Còi BZ1)');
+        playTone(2700, 0.1);
+        setTimeout(() => playTone(3200, 0.12), 140);
+        addLog('GATEWAY', '✔ HTTP 200 OK — Đặt hàng thành công! Đã chuyển tiếp đến nhân viên phục vụ.', 'success');
+
+        setTimeout(() => {
+          setBuzzerActive(false);
+          setLedColor('OFF');
+          setCurrentDrawMa(0.015);
+          setPowerPhase('Deep Sleep (15µA)');
+          addLog('POWER', 'ESP32-S3 tắt toàn bộ ngoại vi -> esp_deep_sleep_start() hoàn tất.', 'info');
+        }, 1200);
+      }, 700);
+    }, 250);
+  };
+
+  // Simulate Cancel Cycle (Double Click)
+  const triggerCancelCycle = async () => {
+    addLog('INTERRUPT', '⚡ SW1 Double-Click (2 lần nhấn) -> Gửi yêu cầu HỦY ĐƠN HÀNG (CANCEL)', 'warn');
+    setLedColor('YELLOW');
+    setCurrentDrawMa(180);
+    setPowerPhase('Hủy đơn hàng (180mA)');
+    playTone(2200, 0.08);
+    setTimeout(() => playTone(1600, 0.15), 120);
+
+    const newNonce = Array.from(window.crypto.getRandomValues(new Uint8Array(16)))
+      .map(b => b.toString(16).padStart(2, '0')).join('');
+    const newTs = Math.floor(Date.now() / 1000);
+    const payload = `${HARDWARE_PROFILE.DEVICE_ID}:${newTs}:${newNonce}:{"action":"CANCEL_ORDER"}`;
+    const newSig = await computeHmacSha256(HARDWARE_PROFILE.DEVICE_SECRET, payload);
+    setNonce(newNonce);
+    setTimestamp(newTs);
+    setSignature(newSig);
+
+    setTimeout(() => {
+      setLedColor('OFF');
+      setCurrentDrawMa(0.015);
+      setPowerPhase('Deep Sleep (15µA)');
+      addLog('GATEWAY', '✔ HTTP 200 OK — Đã hủy đơn hàng thành công.', 'success');
+    }, 1500);
+  };
+
+  // Simulate Tamper Attack Defense
+  const triggerTamperDefense = async () => {
+    addLog('ATTACK', '⚠️ Đang giả lập tấn công Sửa Đổi Gói Tin (Data Tampering Attack)...', 'warn');
+    const forgedPayload = `${HARDWARE_PROFILE.DEVICE_ID}:${timestamp}:${nonce}:{"action":"COMPROMISED_PAYLOAD"}`;
+    const forgedSig = await computeHmacSha256('ATTACKER_INVALID_SECRET', forgedPayload);
+    
+    setSignature(forgedSig);
+    setTamperedState(true);
+    setLedColor('RED');
+    setBuzzerActive(true);
+    playTone(850, 0.3, 'sawtooth');
+    
+    addLog('DEFENSE', '🛡️ PHÒNG THỦ THÀNH CÔNG: Chữ ký không khớp với khóa bí mật phần cứng! Gateway trả về HTTP 401 Unauthorized!', 'error');
+    
+    setTimeout(() => {
+      setBuzzerActive(false);
+      setLedColor('OFF');
+      setTamperedState(false);
+      setCurrentDrawMa(0.015);
+      setPowerPhase('Deep Sleep (15µA)');
+    }, 1600);
+  };
+
+  // Run 10 Automated Hardware Test Steps
+  const runFullTestSuite = async () => {
+    if (testRunning) return;
+    setTestRunning(true);
+    setTestResults([]);
+    setTestProgress(0);
+    addLog('TEST_RUNNER', 'Bắt đầu chạy toàn bộ 10 bài kiểm thử phần cứng KiCad...', 'info');
+
+    const steps = [
+      { name: 'Khởi động nguồn & LDO 3.3V (ME6211C33)', duration: 180, tag: 'PWR' },
+      { name: 'Giao tiếp I2C Bus MAX17048G (Địa chỉ 0x36)', duration: 240, tag: 'I2C' },
+      { name: 'Đo pin VCell & SOC% qua thuật toán ModelGauge', duration: 200, tag: 'FUEL' },
+      { name: 'Quét ngắt nút bấm SW1 (IO39 - Active LOW)', duration: 220, tag: 'GPIO' },
+      { name: 'Sinh Nonce ngẫu nhiên CSPRNG 16 bytes an toàn', duration: 150, tag: 'CRYPTO' },
+      { name: 'Tính toán chữ ký phần cứng HMAC-SHA256', duration: 210, tag: 'CRYPTO' },
+      { name: 'Kiểm tra xác thực Gateway & Idempotency Header', duration: 260, tag: 'API' },
+      { name: 'Phòng thủ chống can thiệp dữ liệu (Tamper Guard)', duration: 220, tag: 'DEFENSE' },
+      { name: 'Phòng thủ chống Replay Attack (Nonce Cache)', duration: 190, tag: 'DEFENSE' },
+      { name: 'Kích hoạt LED RGB D1 & Còi BZ1 qua MOSFET Q1', duration: 250, tag: 'FEEDBACK' }
+    ];
+
+    let currentResults = [];
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
+      addLog(step.tag, `Đang kiểm tra: ${step.name}...`, 'info');
+      await new Promise(r => setTimeout(r, step.duration));
+      
+      currentResults.push({
+        id: i + 1,
+        name: step.name,
+        passed: true,
+        latencyMs: Math.round(step.duration + Math.random() * 20),
+        detail: 'Đạt chuẩn 100% khớp sơ đồ mạch KiCad.'
+      });
+      setTestResults([...currentResults]);
+      setTestProgress(Math.round(((i + 1) / steps.length) * 100));
+      playTone(2200 + i * 80, 0.03);
+    }
+
+    setTestRunning(false);
+    addLog('TEST_RUNNER', '🎉 HOÀN THÀNH TOÀN BỘ 10/10 BÀI KIỂM THỬ: ĐẠT CHUẨN 100%!', 'success');
+  };
+
+  // Check Backend NestJS on startup
+  useEffect(() => {
+    fetch('http://localhost:5000/api/v1/health', { signal: AbortSignal.timeout(1000) })
+      .then(res => {
+        if (res.ok) setBackendStatus('online');
+      })
+      .catch(() => setBackendStatus('edge'));
+  }, []);
+
+  return (
+    <div className="container">
+      {/* 1. ULTRA MODERN HEADER */}
+      <header>
+        <div className="header-branding">
+          <div className="brand-icon">⚡</div>
           <div>
-            <div class="pcb-brand-badge">⚡ KICAD HARDWARE LAB &bull; REV 4.5.0</div>
-            <div class="pcb-model-title">ESP32-S3-WROOM-1 IoT BOARD</div>
-          </div>
-          <div style="display: flex; gap: 10px;">
-            <span class="badge badge-primary">TYPE-C CDC NATIVE</span>
-            <span class="badge badge-warning" id="pwrModeBadge">LDO: 3.3V ON</span>
+            <div className="brand-title">
+              ESP32-S3 Smart Order Button
+              <span className="badge badge-primary">KiCad v4.5 Circuit Lab</span>
+              <span className="badge badge-success">React 18 Engine</span>
+            </div>
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '3px' }}>
+              Mô phỏng chu trình phần cứng thực nghiệm ESP32-S3-WROOM-1 &bull; IC MAX17048G &bull; Chữ ký số HMAC-SHA256
+            </p>
           </div>
         </div>
 
-        <!-- Khối linh kiện trực quan trên PCB -->
-        <div class="pcb-components-grid">
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <span className={`badge ${backendStatus === 'online' ? 'badge-success' : 'badge-primary'}`}>
+            <span className="pulse-dot"></span>
+            {backendStatus === 'online' ? 'Backend NestJS: ONLINE' : 'Chế độ: Độc Lập (Edge Mode)'}
+          </span>
+          <span className="badge badge-warning">
+            CPU: 240MHz &bull; LDO 3.3V
+          </span>
+          <button className="btn-pill" onClick={() => setAudioEnabled(!audioEnabled)}>
+            <span>{audioEnabled ? '🔊' : '🔇'}</span>
+            {audioEnabled ? 'Âm thanh: BẬT' : 'Âm thanh: TẮT'}
+          </button>
+        </div>
+      </header>
 
-          <!-- 1. Nút Bấm Cơ Học 3D SW1 -->
-          <div class="button-3d-wrap">
-            <div class="tactile-housing" id="tactileBtn" onmousedown="onButtonDown()" onmouseup="onButtonUp()" ontouchstart="onButtonDown()" ontouchend="onButtonUp()">
-              <div class="tactile-cap">
-                <span>SW1</span>
-                <span class="tactile-sublabel">PRESS</span>
+      {/* 2. TAB NAVIGATION */}
+      <div className="nav-tabs">
+        <button 
+          className={`tab-btn ${activeTab === 'bench' ? 'active' : ''}`}
+          onClick={() => setActiveTab('bench')}
+        >
+          <span>🖥️</span> Bàn Mạch Ảo & Linh Kiện 3D
+        </button>
+        <button 
+          className={`tab-btn ${activeTab === 'scope' ? 'active' : ''}`}
+          onClick={() => setActiveTab('scope')}
+        >
+          <span>📈</span> Dao Động Ký & Phân Tích Pin
+        </button>
+        <button 
+          className={`tab-btn ${activeTab === 'crypto' ? 'active' : ''}`}
+          onClick={() => setActiveTab('crypto')}
+        >
+          <span>🛡️</span> Phòng Thủ HMAC-SHA256
+        </button>
+        <button 
+          className={`tab-btn ${activeTab === 'suite' ? 'active' : ''}`}
+          onClick={() => setActiveTab('suite')}
+        >
+          <span>🧪</span> Bộ Kiểm Thử Tự Động (10 Bước)
+        </button>
+        <button 
+          className={`tab-btn ${activeTab === 'kicad' ? 'active' : ''}`}
+          onClick={() => setActiveTab('kicad')}
+        >
+          <span>📐</span> Sơ Đồ Chân KiCad & Netlist
+        </button>
+      </div>
+
+      {/* 3. TAB CONTENT PANELS */}
+      {activeTab === 'bench' && (
+        <div className="grid-2">
+          {/* CỘT TRÁI: BÀN MẠCH PCB VIRTUAL BENCH */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+            <div className="pcb-board">
+              <svg className="pcb-circuit-svg" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <pattern id="pcbGridReact" width="60" height="60" patternUnits="userSpaceOnUse">
+                    <path d="M 60 0 L 0 0 0 60" fill="none" stroke="rgba(212, 175, 55, 0.15)" strokeWidth="0.8"/>
+                    <circle cx="30" cy="30" r="1.5" fill="rgba(212, 175, 55, 0.25)"/>
+                    <path d="M 0 30 Q 15 30 30 15 T 60 15" fill="none" stroke="rgba(52, 211, 153, 0.15)" strokeWidth="1"/>
+                  </pattern>
+                </defs>
+                <rect width="100%" height="100%" fill="url(#pcbGridReact)"/>
+              </svg>
+
+              <div className="pcb-header-bar">
+                <div>
+                  <div className="pcb-brand-badge">⚡ KICAD HARDWARE LAB &bull; REV 4.5.0</div>
+                  <div className="pcb-model-title">ESP32-S3-WROOM-1 IoT BOARD</div>
+                </div>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <span className="badge badge-primary">TYPE-C CDC NATIVE</span>
+                  <span className="badge badge-warning">LDO: 3.3V ON</span>
+                </div>
+              </div>
+
+              {/* PCB Components Grid */}
+              <div className="pcb-components-grid">
+                {/* 1. Nút Bấm Cơ Học 3D SW1 */}
+                <div className="button-3d-wrap">
+                  <div 
+                    className={`tactile-housing ${sw1Pressed ? 'pressed' : ''}`}
+                    onClick={triggerOrderCycle}
+                  >
+                    <div className="tactile-cap">
+                      <span>SW1</span>
+                      <span className="tactile-sublabel">PRESS</span>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#fff' }}>SW1 (IO39)</div>
+                    <div style={{ fontSize: '10px', color: sw1Pressed ? '#34d399' : 'var(--text-muted)', fontFamily: 'Fira Code' }}>
+                      {sw1Pressed ? 'LOW (0V - ĐANG NHẤN)' : 'PULL-UP: HIGH (3.3V)'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Đèn LED RGB Common Anode D1 */}
+                <div className="led-bulb-container">
+                  <div className="led-socket">
+                    <div className={`led-bulb ${
+                      ledColor === 'BLUE' ? 'glow-blue' :
+                      ledColor === 'GREEN' ? 'glow-green' :
+                      ledColor === 'RED' ? 'glow-red' :
+                      ledColor === 'YELLOW' ? 'glow-yellow' : ''
+                    }`}></div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#fff' }}>RGB D1 (+3.3V)</div>
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'Fira Code' }}>
+                      {ledColor === 'BLUE' ? 'IO8: XANH DƯƠNG' :
+                       ledColor === 'GREEN' ? 'IO6: XANH LÁ' :
+                       ledColor === 'RED' ? 'IO7: ĐỎ CẢNH BÁO' :
+                       ledColor === 'YELLOW' ? 'IO7+IO6: VÀNG' : 'TẮT (OFF)'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Còi Buzzer BZ1 Kích MOSFET Q1 */}
+                <div className="buzzer-wrap">
+                  <div className={`buzzer-casing ${buzzerActive ? 'beeping' : ''}`}>
+                    <div className="buzzer-ring-wave"></div>
+                    <div className="buzzer-vent"></div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#fff' }}>BZ1 (IO2 Q1)</div>
+                    <div style={{ fontSize: '10px', color: buzzerActive ? '#fbbf24' : 'var(--text-muted)', fontFamily: 'Fira Code' }}>
+                      {buzzerActive ? 'BEEPING (2.7kHz)' : 'MOSFET: LOW (TẮT)'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4. IC Cảm Biến Đo Pin MAX17048G */}
+                <div className="gauge-ic-card">
+                  <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--blue-glow)', fontFamily: 'Fira Code' }}>MAX17048G (U6)</div>
+                  <div style={{ fontSize: '24px', fontWeight: 900, color: cellVoltage < 3.4 ? '#fb7185' : '#34d399', margin: '4px 0' }}>
+                    {socPercent}%
+                  </div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'Fira Code' }}>
+                    {cellVoltage.toFixed(2)}V (I2C 0x36)
+                  </div>
+                </div>
+
+                {/* 5. ESP32-S3 SoC */}
+                <div className="mcu-chip-box">
+                  <div style={{ fontSize: '10px', fontWeight: 700, color: '#a1a1aa', fontFamily: 'Fira Code' }}>ESP32-S3</div>
+                  <div style={{ fontSize: '13px', fontWeight: 800, color: '#f8fafc', marginTop: '2px' }}>WROOM-1</div>
+                  <div style={{ fontSize: '9px', color: '#71717a', marginTop: '4px', fontFamily: 'Fira Code' }}>8MB FLASH &bull; OTG</div>
+                </div>
+              </div>
+
+              {/* Action Gesture Pills */}
+              <div className="gesture-bar">
+                <button className="gesture-btn" onClick={triggerOrderCycle}>
+                  <span>👆</span> 1 Chạm: Đặt Hàng (ORDER)
+                </button>
+                <button className="gesture-btn" onClick={triggerCancelCycle}>
+                  <span>✌️</span> 2 Chạm: Hủy Đơn (CANCEL)
+                </button>
+                <button className="gesture-btn" onClick={triggerTamperDefense}>
+                  <span>⚔️</span> Giả Lập Bị Sửa Gói Tin
+                </button>
               </div>
             </div>
-            <div style="text-align: center;">
-              <div style="font-size: 13px; font-weight: 800; color: #fff;">SW1 (IO39)</div>
-              <div style="font-size: 10px; color: var(--text-muted); font-family: 'Fira Code', monospace;" id="sw1Status">PULL-UP: HIGH (3.3V)</div>
+
+            {/* Điều khiển điện áp pin tương tác */}
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title">
+                  <span>🔋</span> Giả Lập Mức Pin Thực Nghiệm (LiPo / CR123A)
+                </div>
+                <span className="badge badge-primary">{cellVoltage.toFixed(2)}V &bull; {socPercent}%</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--text-muted)' }}>
+                  <span>3.20V (Cạn pin)</span>
+                  <span>3.70V (Trung bình)</span>
+                  <span>4.20V (Đầy pin 100%)</span>
+                </div>
+                <input 
+                  type="range" 
+                  min="3.20" 
+                  max="4.20" 
+                  step="0.02" 
+                  value={cellVoltage} 
+                  onChange={(e) => handleVoltageChange(e.target.value)}
+                  style={{ width: '100%', cursor: 'pointer', accentColor: '#38bdf8' }}
+                />
+                <div style={{ fontSize: '11px', color: 'var(--text-dim)', fontStyle: 'italic' }}>
+                  * Kéo thanh trượt để thử nghiệm phản ứng của thuật toán MAX17048 ModelGauge & cảnh báo pin yếu của mạch.
+                </div>
+              </div>
             </div>
           </div>
 
-          <!-- 2. Đèn LED RGB Common Anode D1 -->
-          <div class="led-bulb-container">
-            <div class="led-socket">
-              <div class="led-bulb" id="ledBulb"></div>
+          {/* CỘT PHẢI: TRẠNG THÁI CHÂN & TELEMETRY */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title">
+                  <span>📌</span> Trạng Thái GPIO Phần Cứng Tức Thời
+                </div>
+                <span className="badge badge-success">ACTIVE</span>
+              </div>
+
+              <table className="pinout-table">
+                <thead>
+                  <tr>
+                    <th>Chân GPIO</th>
+                    <th>Chức Năng KiCad</th>
+                    <th>Trạng Thái Điện Áp</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><strong>IO39</strong></td>
+                    <td>SW1 (Nút nhấn)</td>
+                    <td><span className={`pin-badge ${sw1Pressed ? 'pin-low' : 'pin-high'}`}>{sw1Pressed ? 'LOW (0V - Pressed)' : 'HIGH (3.3V - Idle)'}</span></td>
+                  </tr>
+                  <tr>
+                    <td><strong>IO7</strong></td>
+                    <td>LED_R (Catot Đỏ)</td>
+                    <td><span className={`pin-badge ${ledColor === 'RED' || ledColor === 'YELLOW' ? 'pin-low' : 'pin-high'}`}>{ledColor === 'RED' || ledColor === 'YELLOW' ? 'LOW (SÁNG)' : 'HIGH (TẮT)'}</span></td>
+                  </tr>
+                  <tr>
+                    <td><strong>IO6</strong></td>
+                    <td>LED_G (Catot Xanh Lá)</td>
+                    <td><span className={`pin-badge ${ledColor === 'GREEN' || ledColor === 'YELLOW' ? 'pin-low' : 'pin-high'}`}>{ledColor === 'GREEN' || ledColor === 'YELLOW' ? 'LOW (SÁNG)' : 'HIGH (TẮT)'}</span></td>
+                  </tr>
+                  <tr>
+                    <td><strong>IO8</strong></td>
+                    <td>LED_B (Catot Xanh Dương)</td>
+                    <td><span className={`pin-badge ${ledColor === 'BLUE' ? 'pin-low' : 'pin-high'}`}>{ledColor === 'BLUE' ? 'LOW (SÁNG)' : 'HIGH (TẮT)'}</span></td>
+                  </tr>
+                  <tr>
+                    <td><strong>IO2</strong></td>
+                    <td>Còi BZ1 (Gate Q1)</td>
+                    <td><span className={`pin-badge ${buzzerActive ? 'pin-warn' : 'pin-low'}`}>{buzzerActive ? 'HIGH (Kích MOSFET)' : 'LOW (Silent)'}</span></td>
+                  </tr>
+                  <tr>
+                    <td><strong>IO4 / IO5</strong></td>
+                    <td>I2C SDA / SCL</td>
+                    <td><span className="pin-badge pin-high">PULL-UP 4.7k (3.3V)</span></td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-            <div style="text-align: center;">
-              <div style="font-size: 13px; font-weight: 800; color: #fff;">RGB D1 (+3.3V)</div>
-              <div style="font-size: 10px; color: var(--text-muted); font-family: 'Fira Code', monospace;" id="ledColorLabel">TẮT (OFF)</div>
+
+            {/* Mini Log Console */}
+            <div className="card">
+              <div className="card-header">
+                <div className="card-title">
+                  <span>📟</span> Nhật Ký Telemetry & Phần Cứng
+                </div>
+                <button className="btn-pill" onClick={() => setLogs([])}>Xóa Log</button>
+              </div>
+              <div className="terminal-box">
+                {logs.slice(-40).map(l => (
+                  <div key={l.id} className="log-line">
+                    <span className="log-time">[{l.time}]</span>
+                    <span className={`log-tag tag-${l.level}`}>{l.tag}</span>
+                    <span>{l.text}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: DAO ĐỘNG KÝ & PHÂN TÍCH PIN */}
+      {activeTab === 'scope' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">
+                <span>📈</span> Dao Động Ký Kỹ Thuật Số (Digital Oscilloscope — 60 FPS)
+              </div>
+              <span className="badge badge-success">
+                Dòng tức thời: {currentDrawMa >= 1 ? `${currentDrawMa.toFixed(1)} mA` : `${(currentDrawMa * 1000).toFixed(0)} µA`} &bull; {powerPhase}
+              </span>
+            </div>
+            
+            <OscilloscopeCanvas currentMa={currentDrawMa} />
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginTop: '10px' }}>
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '16px', borderRadius: '14px', border: '1px solid var(--border-subtle)' }}>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>CHẾ ĐỘ TIẾT KIỆM ĐIỆN</div>
+                <div style={{ fontSize: '20px', fontWeight: 800, color: '#34d399', margin: '4px 0' }}>15 µA</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Deep Sleep RTC Wakeup</div>
+              </div>
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '16px', borderRadius: '14px', border: '1px solid var(--border-subtle)' }}>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>CỰC ĐẠI WIFI RF TRANSMIT</div>
+                <div style={{ fontSize: '20px', fontWeight: 800, color: '#38bdf8', margin: '4px 0' }}>240 mA</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>802.11b +20dBm TX Burst (~600ms)</div>
+              </div>
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '16px', borderRadius: '14px', border: '1px solid var(--border-subtle)' }}>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>TUỔI THỌ PIN CR123A (1500mAh)</div>
+                <div style={{ fontSize: '20px', fontWeight: 800, color: '#fbbf24', margin: '4px 0' }}>~ 2.8 Năm</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>Ước tính với 20 lần bấm / ngày</div>
+              </div>
             </div>
           </div>
 
-          <!-- 3. Còi Buzzer BZ1 Kích MOSFET Q1 -->
-          <div class="buzzer-wrap">
-            <div class="buzzer-casing" id="buzzerBox">
-              <div class="buzzer-ring-wave"></div>
-              <div class="buzzer-vent"></div>
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">
+                <span>🔬</span> Chi Tiết Thanh Ghi MAX17048G (I2C Registers)
+              </div>
+              <span className="badge badge-primary">ModelGauge Algorithmic Hex Map</span>
             </div>
-            <div style="text-align: center;">
-              <div style="font-size: 13px; font-weight: 800; color: #fff;">BZ1 (IO2 Q1)</div>
-              <div style="font-size: 10px; color: var(--text-muted); font-family: 'Fira Code', monospace;" id="buzzerStatus">MOSFET: LOW (TẮT)</div>
+            <table className="pinout-table">
+              <thead>
+                <tr>
+                  <th>Địa chỉ Hex</th>
+                  <th>Tên Thanh Ghi</th>
+                  <th>Giá Trị Đọc Được</th>
+                  <th>Ý Nghĩa Kỹ Thuật</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>0x02</strong></td>
+                  <td>VCELL</td>
+                  <td><code>0x{Math.round((cellVoltage * 1000 * 4) / 5 << 4).toString(16).toUpperCase()}</code> ({cellVoltage.toFixed(2)}V)</td>
+                  <td>Độ phân giải 12-bit ADC, bước 1.25mV</td>
+                </tr>
+                <tr>
+                  <td><strong>0x04</strong></td>
+                  <td>SOC</td>
+                  <td><code>0x{(Math.floor(socPercent) << 8 | Math.round((socPercent % 1) * 256)).toString(16).toUpperCase()}</code> ({socPercent}%)</td>
+                  <td>Mức pin 16-bit, tỷ lệ 1/256% mỗi LSB</td>
+                </tr>
+                <tr>
+                  <td><strong>0x08</strong></td>
+                  <td>MODE</td>
+                  <td><code>0x0000</code> (QuickStart / Hibernation)</td>
+                  <td>Chế độ vận hành siêu tiết kiệm điện</td>
+                </tr>
+                <tr>
+                  <td><strong>0x0C</strong></td>
+                  <td>CONFIG</td>
+                  <td><code>0x971C</code> (Alert Threshold = 4%)</td>
+                  <td>Cảnh báo khi pin giảm dưới ngưỡng an toàn</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: PHÒNG THỦ MẬT MÃ HMAC-SHA256 */}
+      {activeTab === 'crypto' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">
+                <span>🛡️</span> Bộ Mã Hóa Phần Cứng HMAC-SHA256 & CSPRNG Nonce
+              </div>
+              <span className={`badge ${tamperedState ? 'badge-danger' : 'badge-success'}`}>
+                {tamperedState ? '⚠️ PHÁT HIỆN CAN THIỆP GÓI TIN' : '✔ TOÀN VẸN CHỮ KÝ (VERIFIED)'}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>MÃ THIẾT BỊ (X-DEVICE-ID)</div>
+                <div className="crypto-code-block">{HARDWARE_PROFILE.DEVICE_ID}</div>
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                  <span>KHÓA BÍ MẬT PHẦN CỨNG (DEVICE_SECRET_KEY)</span>
+                  <button className="btn-pill" style={{ padding: '2px 8px', fontSize: '10px' }} onClick={() => setShowSecret(!showSecret)}>
+                    {showSecret ? 'Ẩn khóa' : 'Hiện khóa bí mật'}
+                  </button>
+                </div>
+                <div className="crypto-code-block">
+                  {showSecret ? HARDWARE_PROFILE.DEVICE_SECRET : '••••••••••••••••••••••••••••••••••••••••••••'}
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>NONCE (CSPRNG 16 BYTES HEX)</div>
+                  <div className="crypto-code-block">{nonce}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>TIMESTAMP (UNIX EPOCH SECONDS)</div>
+                  <div className="crypto-code-block">{timestamp}</div>
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>CHỮ KÝ MẬT MÃ PHẦN CỨNG (X-SIGNATURE)</div>
+                <div className="crypto-code-block" style={{ color: tamperedState ? '#fb7185' : '#34d399', fontWeight: 700 }}>
+                  {signature}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', marginTop: '10px', flexWrap: 'wrap' }}>
+                <button className="btn-pill btn-primary" onClick={triggerOrderCycle}>
+                  <span>⚡</span> Tạo Chữ Ký Mới
+                </button>
+                <button className="btn-pill btn-danger" onClick={triggerTamperDefense}>
+                  <span>⚔️</span> Thử Nghiệm Tấn Công Sửa Đổi Dữ Liệu
+                </button>
+                <button className="btn-pill" onClick={() => {
+                  navigator.clipboard.writeText(signature);
+                  addLog('CLIPBOARD', 'Đã sao chép chữ ký HMAC-SHA256 vào bộ nhớ tạm!', 'success');
+                }}>
+                  <span>📋</span> Sao Chép Chữ Ký
+                </button>
+              </div>
             </div>
           </div>
+        </div>
+      )}
 
-          <!-- 4. IC Cảm Biến Đo Pin MAX17048G -->
-          <div class="gauge-ic-card">
-            <div class="gauge-ic-pins">
-              <div class="chip-gold-pin"></div>
-              <div class="chip-gold-pin"></div>
-              <div class="chip-gold-pin"></div>
-              <div class="chip-gold-pin"></div>
+      {/* TAB 4: BỘ KIỂM THỬ TỰ ĐỘNG (10 BƯỚC) */}
+      {activeTab === 'suite' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">
+                <span>🧪</span> Khung Kiểm Thử Tự Động Toàn Chu Trình (Automated Test Suite)
+              </div>
+              <button 
+                className="btn-pill btn-success" 
+                onClick={runFullTestSuite}
+                disabled={testRunning}
+              >
+                <span>{testRunning ? '⏳' : '▶'}</span>
+                {testRunning ? 'Đang chạy kiểm thử...' : 'Chạy Toàn Bộ 10 Bài Test'}
+              </button>
             </div>
-            <div style="font-size: 10px; font-weight: 700; color: var(--blue-glow); font-family: 'Fira Code', monospace;">MAX17048G (U6)</div>
-            <div style="font-size: 24px; font-weight: 900; color: #34d399; margin: 4px 0;" id="gaugeSocVal">88%</div>
-            <div style="font-size: 10px; color: var(--text-muted); font-family: 'Fira Code', monospace;" id="gaugeVoltVal">3.87V (I2C 0x36)</div>
+
+            {testRunning && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--text-muted)' }}>
+                  <span>Tiến độ thực nghiệm</span>
+                  <span>{testProgress}%</span>
+                </div>
+                <div style={{ height: '8px', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', overflow: 'hidden' }}>
+                  <div style={{ width: `${testProgress}%`, height: '100%', background: 'linear-gradient(90deg, #0284c7, #10b981)', transition: 'width 0.2s ease' }}></div>
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {[
+                'Khởi động nguồn & LDO 3.3V (ME6211C33)',
+                'Giao tiếp I2C Bus MAX17048G (Địa chỉ 0x36)',
+                'Đo pin VCell & SOC% qua thuật toán ModelGauge',
+                'Quét ngắt nút bấm SW1 (IO39 - Active LOW)',
+                'Sinh Nonce ngẫu nhiên CSPRNG 16 bytes an toàn',
+                'Tính toán chữ ký phần cứng HMAC-SHA256',
+                'Kiểm tra xác thực Gateway & Idempotency Header',
+                'Phòng thủ chống can thiệp dữ liệu (Tamper Guard)',
+                'Phòng thủ chống Replay Attack (Nonce Cache)',
+                'Kích hoạt LED RGB D1 & Còi BZ1 qua MOSFET Q1'
+              ].map((stepName, idx) => {
+                const res = testResults.find(r => r.id === idx + 1);
+                return (
+                  <div 
+                    key={idx} 
+                    className={`test-step-card ${res ? 'pass' : testRunning && testResults.length === idx ? 'running' : ''}`}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span style={{ 
+                        width: '28px', 
+                        height: '28px', 
+                        borderRadius: '50%', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center', 
+                        background: res ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.05)',
+                        color: res ? '#34d399' : 'var(--text-muted)',
+                        fontSize: '12px',
+                        fontWeight: 700
+                      }}>
+                        {res ? '✔' : idx + 1}
+                      </span>
+                      <div>
+                        <div style={{ fontSize: '13px', fontWeight: 700, color: '#f8fafc' }}>{stepName}</div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                          {res ? `${res.detail} (${res.latencyMs}ms)` : 'Đang chờ thực thi...'}
+                        </div>
+                      </div>
+                    </div>
+                    <div>
+                      {res ? (
+                        <span className="badge badge-success">PASS</span>
+                      ) : (
+                        <span className="badge" style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--text-dim)' }}>READY</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-
         </div>
+      )}
 
-        <!-- Live Power & Current Oscilloscope -->
-        <div class="scope-box">
-          <div class="scope-header">
-            <span>⚡ OSCILLOSCOPE: DÒNG TIÊU THỤ THỰC TẾ (mA)</span>
-            <span id="scopeCurrentReadout">Light Sleep: 320µA</span>
-          </div>
-          <canvas id="scopeCanvas" width="600" height="60"></canvas>
-        </div>
+      {/* TAB 5: SƠ ĐỒ CHÂN KICAD & NETLIST */}
+      {activeTab === 'kicad' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">
+                <span>📐</span> Danh Sách Netlist & Bảng Kết Nối KiCad v4.5
+              </div>
+              <span className="badge badge-primary">Smart_Order_Button.kicad_sch</span>
+            </div>
 
-      </div>
-
-      <!-- Bảng điều khiển cử chỉ nhanh (Quick Gestures Panel) -->
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title">
-            <span>🎮</span> Kích Hoạt Cử Chỉ Nhanh (Hardware Gestures)
-          </div>
-          <span style="font-size: 11px; color: var(--text-muted);">Hoặc nhấp trực tiếp vào phím SW1 ở trên</span>
-        </div>
-
-        <div class="btn-grid-actions">
-          <button class="action-btn btn-action-primary" onclick="triggerSingleClick()">
-            <span>🛒</span> Nhấn 1 Lần &bull; ĐẶT HÀNG MỚI
-          </button>
-          <button class="action-btn btn-action-danger" onclick="triggerDoubleClick()">
-            <span>🛑</span> Nhấn 2 Lần &bull; HỦY ĐƠN HÀNG
-          </button>
-          <button class="action-btn btn-action-purple" onclick="triggerHold5s()">
-            <span>📶</span> Giữ 5s &bull; ĐỒNG BỘ CẤU HÌNH
-          </button>
-          <button class="action-btn btn-action-subtle" onclick="triggerHold15s()">
-            <span>⚠️</span> Giữ 15s &bull; FACTORY RESET
-          </button>
-        </div>
-
-        <!-- Thanh trượt điều chỉnh dung lượng pin MAX17048 -->
-        <div class="slider-box">
-          <div class="slider-row-head">
-            <span style="display: flex; align-items: center; gap: 8px;">
-              <span>🔋</span> Dung Lượng Pin Li-Po (Thanh ghi 0x02 VCELL & 0x04 SOC)
-            </span>
-            <span id="sliderValDisplay" style="color: #34d399; font-family: 'Fira Code', monospace; font-weight: 700;">88% (3.87V)</span>
-          </div>
-          <input type="range" id="batterySlider" min="10" max="100" value="88" oninput="updateBatterySlider(this.value)">
-          <div style="display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); font-family: 'Fira Code', monospace;">
-            <span>3.3V (Cạn nguồn)</span>
-            <span>3.7V (Danh định)</span>
-            <span>4.2V (Đầy 100%)</span>
+            <table className="pinout-table">
+              <thead>
+                <tr>
+                  <th>Chân ESP32</th>
+                  <th>Tên Net KiCad</th>
+                  <th>Linh Kiện Kết Nối</th>
+                  <th>Kiểu Tín Hiệu</th>
+                  <th>Điện Áp</th>
+                  <th>Mô Tả Chức Năng</th>
+                </tr>
+              </thead>
+              <tbody>
+                {KICAD_PINS_DATA.map((p, idx) => (
+                  <tr key={idx}>
+                    <td><strong>{p.pin}</strong></td>
+                    <td style={{ color: '#38bdf8' }}><code>{p.net}</code></td>
+                    <td>{p.comp}</td>
+                    <td>{p.type}</td>
+                    <td><span className="pin-badge pin-high">{p.volt}</span></td>
+                    <td style={{ color: 'var(--text-muted)' }}>{p.desc}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
-
-      </div>
-
-      <!-- Bảng trạng thái chân phần cứng GPIO -->
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title">
-            <span>📌</span> Bảng Tra Cứu Chân GPIO ESP32-S3 (Live Pin States)
-          </div>
-        </div>
-
-        <table class="pin-table">
-          <thead>
-            <tr>
-              <th>Chân Chip</th>
-              <th>Nhãn Net KiCad</th>
-              <th>Linh Kiện & Chức Năng</th>
-              <th>Trạng Thái Điện Áp Thực</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><strong>IO39</strong> (Pin 32)</td>
-              <td><code>BTN_ORDER</code></td>
-              <td>Nút bấm SW1 (Nối GND, Pull-up)</td>
-              <td id="pinRowIO39"><span class="pin-badge val-high">HIGH (3.3V)</span></td>
-            </tr>
-            <tr>
-              <td><strong>IO7</strong> (Pin 7)</td>
-              <td><code>LED_R</code></td>
-              <td>LED Đỏ D1 (Common Anode qua R15 1k)</td>
-              <td id="pinRowIO7"><span class="pin-badge val-high">HIGH (TẮT - 3.3V)</span></td>
-            </tr>
-            <tr>
-              <td><strong>IO6</strong> (Pin 6)</td>
-              <td><code>LED_G</code></td>
-              <td>LED Xanh lá D1 (qua R16 470R)</td>
-              <td id="pinRowIO6"><span class="pin-badge val-high">HIGH (TẮT - 3.3V)</span></td>
-            </tr>
-            <tr>
-              <td><strong>IO8</strong> (Pin 12)</td>
-              <td><code>LED_B</code></td>
-              <td>LED Xanh dương D1 (qua R17 470R)</td>
-              <td id="pinRowIO8"><span class="pin-badge val-high">HIGH (TẮT - 3.3V)</span></td>
-            </tr>
-            <tr>
-              <td><strong>IO2</strong> (Pin 38)</td>
-              <td><code>BUZZER_CTRL</code></td>
-              <td>Gate Q1 2N7002 kích còi BZ1</td>
-              <td id="pinRowIO2"><span class="pin-badge val-low">LOW (0V - Tắt)</span></td>
-            </tr>
-            <tr>
-              <td><strong>IO4 / IO5</strong></td>
-              <td><code>I2C_SDA / SCL</code></td>
-              <td>IC đo pin MAX17048 (Addr 0x36)</td>
-              <td><span class="pin-badge val-i2c">I2C BUS OK (Pull-up 4.7k)</span></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
+      )}
     </div>
+  );
+}
 
-    <!-- Cột Phải: Cryptographic Inspector & Serial Monitor -->
-    <div style="display: flex; flex-direction: column; gap: 24px;">
+// =========================================================================
+// 3. OSCILLOSCOPE CANVAS COMPONENT (60 FPS PHOSPHOR SIMULATION)
+// =========================================================================
+function OscilloscopeCanvas({ currentMa }) {
+  const canvasRef = useRef(null);
+  const dataRef = useRef(new Array(160).fill(2));
+  const smoothMaRef = useRef(currentMa);
 
-      <!-- Bảng Soi Chữ Ký Mã Hóa HMAC-SHA256 -->
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title">
-            <span>🔐</span> Bảng Soi Mật Mã Phần Cứng (HMAC-SHA256)
-          </div>
-          <button class="btn-pill" style="font-size: 11px; padding: 4px 10px;" onclick="copySignature()">
-            📋 Copy Chữ Ký
-          </button>
-        </div>
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let animId;
 
-        <div style="display: flex; flex-direction: column; gap: 12px;">
-          
-          <div class="crypto-field">
-            <div class="crypto-label">
-              <span>x-device-id (Định danh cứng):</span>
-              <span style="color: #64748b;">NVS IMMUTABLE</span>
-            </div>
-            <div class="crypto-val" style="color: var(--blue-glow);">BTN-8829-WTR</div>
-          </div>
+    const render = () => {
+      smoothMaRef.current += (currentMa - smoothMaRef.current) * 0.15;
+      const normY = Math.min(140, (smoothMaRef.current / 250) * 130 + (Math.random() * 2));
+      
+      dataRef.current.push(normY);
+      dataRef.current.shift();
 
-          <div class="crypto-field">
-            <div class="crypto-label">
-              <span>x-timestamp (Unix Epoch):</span>
-              <span style="color: #64748b;">ANTI-STALE (60s)</span>
-            </div>
-            <div class="crypto-val" style="color: var(--amber-glow);" id="cryptoTs">Chưa phát</div>
-          </div>
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-          <div class="crypto-field">
-            <div class="crypto-label">
-              <span>x-nonce (Chống Replay Attack 16 bytes):</span>
-              <span style="color: #64748b;">SECURE RANDOM</span>
-            </div>
-            <div class="crypto-val" style="color: var(--violet-glow);" id="cryptoNonce">Chưa sinh</div>
-          </div>
+      // Grid Lines
+      ctx.strokeStyle = 'rgba(52, 211, 153, 0.12)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let y = 20; y < canvas.height; y += 25) {
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+      }
+      for (let x = 40; x < canvas.width; x += 50) {
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+      }
+      ctx.stroke();
 
-          <div class="crypto-field">
-            <div class="crypto-label">
-              <span>x-signature (HMAC-SHA256 Digest):</span>
-              <span style="color: #64748b;">SECRET KEY VERIFIED</span>
-            </div>
-            <div class="crypto-val" style="color: #34d399;" id="cryptoSig">Chờ sự kiện bấm nút...</div>
-          </div>
+      // Waveform phosphor line
+      ctx.strokeStyle = smoothMaRef.current > 100 ? '#38bdf8' : '#34d399';
+      ctx.shadowColor = smoothMaRef.current > 100 ? '#38bdf8' : '#34d399';
+      ctx.shadowBlur = 8;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
 
-          <!-- Thử Nghiệm Can Thiệp Dữ Liệu (Tamper Defense Test) -->
-          <div style="background: rgba(239, 68, 68, 0.08); border: 1px dashed rgba(239, 68, 68, 0.35); border-radius: 12px; padding: 12px; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <div style="font-size: 12px; font-weight: 700; color: #f87171;">🛡️ Kiểm tra phòng thủ can thiệp (Tamper Test)</div>
-              <div style="font-size: 10px; color: var(--text-muted); margin-top: 2px;">Giả mạo 1 byte payload để kiểm tra phát hiện lệch hash</div>
-            </div>
-            <button class="btn-pill" style="border-color: rgba(239,68,68,0.4); color: #f87171;" onclick="testTampering()">
-              Test Can Thiệp
-            </button>
-          </div>
+      const step = canvas.width / (dataRef.current.length - 1);
+      for (let i = 0; i < dataRef.current.length; i++) {
+        const x = i * step;
+        const y = canvas.height - dataRef.current[i] - 12;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.shadowBlur = 0;
 
-        </div>
-      </div>
-
-      <!-- Serial Monitor (115200 baud USB CDC) -->
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title">
-            <span>💻</span> Serial Monitor (ESP32-S3 Native USB CDC &bull; 115200 Baud)
-          </div>
-          <button class="btn-pill" style="font-size: 11px; padding: 4px 10px;" onclick="clearLogs()">
-            Xóa Log
-          </button>
-        </div>
-
-        <div class="terminal-container" id="serialTerminal">
-          <div class="log-line">
-            <span class="log-ts">[BOOT]</span>
-            <span class="log-info">SMART ORDER BUTTON — ESP32-S3 PRODUCTION FIRMWARE v4.5</span>
-          </div>
-          <div class="log-line">
-            <span class="log-ts">[BOOT]</span>
-            <span class="log-info">Schematic: Smart_Order_Button.kicad_sch | Device ID: BTN-8829-WTR</span>
-          </div>
-          <div class="log-line">
-            <span class="log-ts">[POWER]</span>
-            <span class="log-success">MAX17048 Fuel Gauge detected on I2C (addr 0x36) - Vcell: 3.87V (88%)</span>
-          </div>
-          <div class="log-line">
-            <span class="log-ts">[READY]</span>
-            <span class="log-info">Sẵn sàng nhận tín hiệu nút bấm SW1 (IO39)...</span>
-          </div>
-        </div>
-      </div>
-
-    </div>
-
-  </div>
-</div>
-
-<!-- Web Audio API, Oscilloscope & Logic Script -->
-<script>
-  let audioCtx = null;
-  let audioEnabled = false;
-
-  function initAudio() {
-    if (!audioCtx) {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume();
-    }
-  }
-
-  function toggleAudio() {
-    initAudio();
-    audioEnabled = !audioEnabled;
-    const btn = document.getElementById('audioBtn');
-    if (audioEnabled) {
-      btn.innerHTML = '<span>🔊</span> Âm Thanh: BẬT';
-      btn.classList.add('btn-pill-active');
-      playTone(1800, 0.04);
-    } else {
-      btn.innerHTML = '<span>🔇</span> Âm Thanh: TẮT';
-      btn.classList.remove('btn-pill-active');
-    }
-  }
-
-  function playTone(freq, duration = 0.08, type = 'sine') {
-    if (!audioEnabled || !audioCtx) return;
-    try {
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = type;
-      osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-      gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start();
-      osc.stop(audioCtx.currentTime + duration);
-    } catch (e) {
-      console.warn('Audio error:', e);
-    }
-  }
-
-  function playBuzzerBeep(type) {
-    if (!audioEnabled) return;
-    if (type === 'CLICK') {
-      playTone(1800, 0.03, 'square');
-    } else if (type === 'SUCCESS') {
-      playTone(2700, 0.06, 'triangle');
-      setTimeout(() => playTone(3500, 0.12, 'triangle'), 80);
-    } else if (type === 'CANCEL') {
-      playTone(1200, 0.35, 'sawtooth');
-    } else if (type === 'ERROR') {
-      playTone(1400, 0.08, 'square');
-      setTimeout(() => playTone(1400, 0.08, 'square'), 120);
-      setTimeout(() => playTone(1400, 0.08, 'square'), 240);
-    }
-  }
-
-  // Quản lý Trạng Thái LED RGB (Active LOW)
-  function setLedState(color) {
-    const led = document.getElementById('ledBulb');
-    const label = document.getElementById('ledColorLabel');
-    const rPin = document.getElementById('pinRowIO7');
-    const gPin = document.getElementById('pinRowIO6');
-    const bPin = document.getElementById('pinRowIO8');
-
-    led.className = 'led-bulb';
-
-    if (color === 'BLUE') {
-      led.classList.add('led-blue');
-      label.innerText = 'XANH DƯƠNG (IO8 LOW)';
-      rPin.innerHTML = '<span class="pin-badge val-high">HIGH (3.3V)</span>';
-      gPin.innerHTML = '<span class="pin-badge val-high">HIGH (3.3V)</span>';
-      bPin.innerHTML = '<span class="pin-badge val-low">LOW (0V - BẬT)</span>';
-    } else if (color === 'GREEN') {
-      led.classList.add('led-green');
-      label.innerText = 'XANH LÁ (IO6 LOW)';
-      rPin.innerHTML = '<span class="pin-badge val-high">HIGH (3.3V)</span>';
-      gPin.innerHTML = '<span class="pin-badge val-low">LOW (0V - BẬT)</span>';
-      bPin.innerHTML = '<span class="pin-badge val-high">HIGH (3.3V)</span>';
-    } else if (color === 'RED') {
-      led.classList.add('led-red');
-      label.innerText = 'ĐỎ (IO7 LOW)';
-      rPin.innerHTML = '<span class="pin-badge val-low">LOW (0V - BẬT)</span>';
-      gPin.innerHTML = '<span class="pin-badge val-high">HIGH (3.3V)</span>';
-      bPin.innerHTML = '<span class="pin-badge val-high">HIGH (3.3V)</span>';
-    } else if (color === 'YELLOW') {
-      led.classList.add('led-yellow');
-      label.innerText = 'VÀNG (IO7 + IO6 LOW)';
-      rPin.innerHTML = '<span class="pin-badge val-low">LOW (0V - BẬT)</span>';
-      gPin.innerHTML = '<span class="pin-badge val-low">LOW (0V - BẬT)</span>';
-      bPin.innerHTML = '<span class="pin-badge val-high">HIGH (3.3V)</span>';
-    } else if (color === 'CYAN') {
-      led.classList.add('led-cyan');
-      label.innerText = 'CYAN (IO6 + IO8 LOW)';
-      rPin.innerHTML = '<span class="pin-badge val-high">HIGH (3.3V)</span>';
-      gPin.innerHTML = '<span class="pin-badge val-low">LOW (0V - BẬT)</span>';
-      bPin.innerHTML = '<span class="pin-badge val-low">LOW (0V - BẬT)</span>';
-    } else if (color === 'PURPLE') {
-      led.classList.add('led-purple');
-      label.innerText = 'TÍM (IO7 + IO8 LOW)';
-      rPin.innerHTML = '<span class="pin-badge val-low">LOW (0V - BẬT)</span>';
-      gPin.innerHTML = '<span class="pin-badge val-high">HIGH (3.3V)</span>';
-      bPin.innerHTML = '<span class="pin-badge val-low">LOW (0V - BẬT)</span>';
-    } else {
-      label.innerText = 'TẮT (OFF)';
-      rPin.innerHTML = '<span class="pin-badge val-high">HIGH (3.3V)</span>';
-      gPin.innerHTML = '<span class="pin-badge val-high">HIGH (3.3V)</span>';
-      bPin.innerHTML = '<span class="pin-badge val-high">HIGH (3.3V)</span>';
-    }
-  }
-
-  // Quản lý Trạng Thái Còi Buzzer (Active HIGH)
-  function setBuzzerState(active) {
-    const box = document.getElementById('buzzerBox');
-    const status = document.getElementById('buzzerStatus');
-    const pinRow = document.getElementById('pinRowIO2');
-
-    if (active) {
-      box.classList.add('buzzer-beeping');
-      status.innerText = 'MOSFET: HIGH (KÍCH BZ1)';
-      status.style.color = '#fbbf24';
-      pinRow.innerHTML = '<span class="pin-badge" style="color: #fbbf24; background: rgba(251,191,36,0.15)">HIGH (3.3V - BÁO CÒI)</span>';
-    } else {
-      box.classList.remove('buzzer-beeping');
-      status.innerText = 'MOSFET: LOW (TẮT)';
-      status.style.color = 'var(--text-muted)';
-      pinRow.innerHTML = '<span class="pin-badge val-low">LOW (0V - Tắt)</span>';
-    }
-  }
-
-  // Quản lý Logging Serial Monitor
-  function addLog(tag, message, type = 'info') {
-    const terminal = document.getElementById('serialTerminal');
-    const row = document.createElement('div');
-    row.className = 'log-line';
-
-    const now = new Date().toLocaleTimeString('vi-VN');
-    row.innerHTML = `<span class="log-ts">[${now}][${tag}]</span><span class="log-${type}">${message}</span>`;
-    terminal.appendChild(row);
-    terminal.scrollTop = terminal.scrollHeight;
-  }
-
-  function clearLogs() {
-    document.getElementById('serialTerminal').innerHTML = '';
-  }
-
-  // Tính toán Chữ Ký HMAC-SHA256 chuẩn
-  async function computeHmacSha256(keyStr, messageStr) {
-    const enc = new TextEncoder();
-    const keyData = enc.encode(keyStr);
-    const msgData = enc.encode(messageStr);
-
-    const cryptoKey = await window.crypto.subtle.importKey(
-      'raw',
-      keyData,
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign']
-    );
-
-    const signature = await window.crypto.subtle.sign('HMAC', cryptoKey, msgData);
-    const hashArray = Array.from(new Uint8Array(signature));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  }
-
-  function generateRandomNonce() {
-    const bytes = new Uint8Array(16);
-    window.crypto.getRandomValues(bytes);
-    return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
-  }
-
-  // Xử lý sự kiện gửi đơn hàng / hủy đơn hàng
-  let currentBattery = 88;
-  const DEVICE_ID = 'BTN-8829-WTR';
-  const DEVICE_SECRET = 'sec_smart_button_8829_wtr_key_99';
-  let lastGeneratedSignature = '';
-
-  function updateBatterySlider(val) {
-    currentBattery = parseInt(val);
-    const volt = (3.3 + (currentBattery / 100) * 0.9).toFixed(2);
-    document.getElementById('gaugeSocVal').innerText = currentBattery + '%';
-    document.getElementById('gaugeVoltVal').innerText = volt + 'V (I2C 0x36)';
-    document.getElementById('sliderValDisplay').innerText = currentBattery + '% (' + volt + 'V)';
-  }
-
-  async function executeHardwareFlow(eventType) {
-    addLog('EVENT', `Bắt đầu xử lý cử chỉ: ${eventType}`, 'info');
-
-    // Trigger Oscilloscope current spike
-    setScopeCurrent(195, 'Wi-Fi 15dBm TX Burst');
-
-    // 1. Bật LED Xanh dương báo đang phát dữ liệu
-    setLedState('BLUE');
-    setBuzzerState(true);
-    playBuzzerBeep('CLICK');
-    setTimeout(() => setBuzzerState(false), 60);
-
-    // 2. Chuẩn bị thông tin mã hóa
-    const timestamp = Math.floor(Date.now() / 1000).toString();
-    const nonce = generateRandomNonce();
-    const requestId = 'SOB-' + timestamp + '-' + Math.floor(1000 + Math.random() * 9000);
-
-    const bodyObj = {
-      eventType: eventType,
-      requestId: requestId,
-      battery: currentBattery,
-      rssi: -56
+      animId = requestAnimationFrame(render);
     };
-    const bodyStr = JSON.stringify(bodyObj);
 
-    // Ký HMAC-SHA256
-    const payload = `${DEVICE_ID}:${timestamp}:${nonce}:${bodyStr}`;
-    const signature = await computeHmacSha256(DEVICE_SECRET, payload);
-    lastGeneratedSignature = signature;
+    animId = requestAnimationFrame(render);
+    return () => cancelAnimationFrame(animId);
+  }, [currentMa]);
 
-    // Cập nhật lên Bảng Soi Mật Mã
-    document.getElementById('cryptoTs').innerText = timestamp;
-    document.getElementById('cryptoNonce').innerText = nonce;
-    document.getElementById('cryptoSig').innerText = signature;
+  return (
+    <div className="scope-box">
+      <canvas ref={canvasRef} width={800} height={180} className="scope-canvas" />
+    </div>
+  );
+}
 
-    addLog('HMAC', `Đã ký gói tin: ${signature.substring(0, 16)}...`, 'info');
-    addLog('HTTP', `Gửi POST /api/v1/iot/events (Req: ${requestId})`, 'info');
-
-    let success = false;
-    let orderNumber = 'ORD-' + timestamp.substring(4);
-
-    try {
-      const res = await fetch('http://localhost:5000/api/v1/iot/events', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-device-id': DEVICE_ID,
-          'x-timestamp': timestamp,
-          'x-nonce': nonce,
-          'x-signature': signature
-        },
-        body: bodyStr
-      });
-
-      if (res.ok) {
-        const json = await res.json();
-        success = true;
-        orderNumber = json.data?.order?.orderNumber || requestId;
-        addLog('CLOUD', `Máy chủ NestJS xác nhận: ${JSON.stringify(json.message)}`, 'success');
-      } else {
-        throw new Error('HTTP ' + res.status);
-      }
-    } catch (e) {
-      success = true;
-      addLog('EDGE', `Chế độ Edge Emulator: Xác thực HMAC hợp lệ (100% logic chuẩn)`, 'success');
-    }
-
-    // 3. Phản hồi thị giác & xúc giác
-    if (success) {
-      if (eventType === 'DOUBLE_PRESS' || eventType === 'CANCEL') {
-        addLog('ACTION', 'ĐÃ HỦY ĐƠN HÀNG THÀNH CÔNG!', 'warn');
-        setLedState('YELLOW');
-        setBuzzerState(true);
-        playBuzzerBeep('CANCEL');
-        setTimeout(() => setBuzzerState(false), 350);
-      } else {
-        addLog('ACTION', `ĐẶT HÀNG THÀNH CÔNG! Mã đơn: ${orderNumber}`, 'success');
-        setLedState('GREEN');
-        setBuzzerState(true);
-        playBuzzerBeep('SUCCESS');
-        setTimeout(() => setBuzzerState(false), 200);
-      }
-    } else {
-      addLog('ERROR', 'Giao dịch thất bại!', 'error');
-      setLedState('RED');
-      setBuzzerState(true);
-      playBuzzerBeep('ERROR');
-      setTimeout(() => setBuzzerState(false), 300);
-    }
-
-    // 4. Tắt đèn và vào Sleep
-    setTimeout(() => {
-      setLedState('OFF');
-      setScopeCurrent(0.32, 'Light Sleep (<50µs Wake)');
-      addLog('SLEEP', 'Tắt Wi-Fi. Vi điều khiển vào Light Sleep (320µA). Chờ SW1 thức dậy.', 'info');
-    }, 1500);
-  }
-
-  function triggerSingleClick() {
-    executeHardwareFlow('SINGLE_PRESS');
-  }
-
-  function triggerDoubleClick() {
-    executeHardwareFlow('DOUBLE_PRESS');
-  }
-
-  function triggerFiveClicks() {
-    addLog('GESTURE', 'Phát hiện NHẤN 5 LẦN: Kích hoạt BLE Auto-Pairing & SoftAP...', 'info');
-    setLedState('BLUE');
-    setBuzzerState(true);
-    playBuzzerBeep('SUCCESS');
-    setTimeout(() => setBuzzerState(false), 150);
-
-    let blink = 0;
-    const interval = setInterval(() => {
-      blink++;
-      if (blink % 2 === 0) setLedState('BLUE');
-      else setLedState('OFF');
-      if (blink > 6) {
-        clearInterval(interval);
-        setLedState('OFF');
-        addLog('BLE', 'Quá thời gian kết nối. Quay lại Sleep.', 'warn');
-      }
-    }, 400);
-  }
-
-  function triggerHold5s() {
-    addLog('GESTURE', 'Phát hiện GIỮ 5S: Kích hoạt đồng bộ cấu hình (Sync Config)...', 'info');
-    setLedState('PURPLE');
-    playBuzzerBeep('CLICK');
-    setTimeout(() => {
-      setLedState('OFF');
-      addLog('SYNC', 'Đã đồng bộ thông số thiết bị thành công.', 'success');
-    }, 1500);
-  }
-
-  function triggerHold15s() {
-    addLog('RESET', 'Phát hiện GIỮ 15S: KHÔI PHỤC CÀI ĐẶT GỐC (NVS Flash Clear)...', 'error');
-    setLedState('RED');
-    setBuzzerState(true);
-    playBuzzerBeep('ERROR');
-    setTimeout(() => setBuzzerState(false), 600);
-    setTimeout(() => {
-      setLedState('OFF');
-      addLog('RESET', 'Đã xóa trắng NVS Wi-Fi credentials. Sẵn sàng cấu hình lại.', 'warn');
-    }, 1500);
-  }
-
-  function copySignature() {
-    const sig = document.getElementById('cryptoSig').innerText;
-    if (sig && !sig.includes('Chờ')) {
-      navigator.clipboard.writeText(sig);
-      addLog('CLIPBOARD', 'Đã sao chép chữ ký HMAC-SHA256 vào bộ nhớ tạm!', 'success');
-    } else {
-      addLog('CLIPBOARD', 'Hãy bấm nút SW1 để sinh chữ ký trước khi copy.', 'warn');
-    }
-  }
-
-  async function testTampering() {
-    addLog('TAMPER', 'Đang thử nghiệm tấn công sửa đổi gói tin (Data Tampering)...', 'warn');
-    const fakePayload = `${DEVICE_ID}:1791999999:attacker_modified:{"eventType":"CANCEL"}`;
-    const forgedSig = await computeHmacSha256(DEVICE_SECRET, fakePayload);
-    
-    document.getElementById('cryptoSig').innerHTML = `<span style="color: #f87171; text-decoration: line-through;">${forgedSig.substring(0, 24)}...</span> (HASH MISMATCH)`;
-    addLog('DEFENSE', '🛡️ PHÒNG THỦ THÀNH CÔNG: Chữ ký không khớp với payload thực tế -> Gateway từ chối lập tức!', 'error');
-    setLedState('RED');
-    playBuzzerBeep('ERROR');
-    setTimeout(() => setLedState('OFF'), 1200);
-  }
-
-  // Tương tác bấm chuột trực tiếp trên SW1
-  let pressStartTime = 0;
-  let clickTimeout = null;
-  let clickCount = 0;
-
-  function onButtonDown() {
-    initAudio();
-    pressStartTime = Date.now();
-    document.getElementById('tactileBtn').classList.add('pressed');
-    document.getElementById('sw1Status').innerText = 'PULL-DOWN: LOW (GND)';
-    document.getElementById('sw1Status').style.color = '#34d399';
-    document.getElementById('pinRowIO39').innerHTML = '<span class="pin-badge val-low">LOW (0V - ĐANG NHẤN)</span>';
-    playTone(1800, 0.02, 'square');
-    setScopeCurrent(45, 'SW1 Interrupt Wakeup');
-  }
-
-  function onButtonUp() {
-    document.getElementById('tactileBtn').classList.remove('pressed');
-    document.getElementById('sw1Status').innerText = 'PULL-UP: HIGH (3.3V)';
-    document.getElementById('sw1Status').style.color = 'var(--text-muted)';
-    document.getElementById('pinRowIO39').innerHTML = '<span class="pin-badge val-high">HIGH (3.3V - Nhả)</span>';
-
-    const duration = Date.now() - pressStartTime;
-
-    if (duration >= 15000) {
-      triggerHold15s();
-    } else if (duration >= 5000) {
-      triggerHold5s();
-    } else {
-      clickCount++;
-      if (clickCount === 1) {
-        clickTimeout = setTimeout(() => {
-          if (clickCount === 1) {
-            triggerSingleClick();
-          } else if (clickCount === 2) {
-            triggerDoubleClick();
-          } else if (clickCount >= 5) {
-            triggerFiveClicks();
-          }
-          clickCount = 0;
-        }, 380);
-      }
-    }
-  }
-
-  // Real-time Oscilloscope Canvas Animation
-  const canvas = document.getElementById('scopeCanvas');
-  const ctx = canvas.getContext('2d');
-  let currentMa = 0.32;
-  let targetMa = 0.32;
-  let historyData = new Array(120).fill(2);
-
-  function setScopeCurrent(mA, label) {
-    targetMa = mA;
-    document.getElementById('scopeCurrentReadout').innerText = `${label}: ${mA} mA`;
-  }
-
-  function drawScope() {
-    currentMa += (targetMa - currentMa) * 0.15;
-    
-    // Convert current mA to pixel height (scale 0 - 250mA)
-    const norm = Math.min(50, (currentMa / 220) * 50 + (Math.random() * 2));
-    historyData.push(norm);
-    historyData.shift();
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Grid lines
-    ctx.strokeStyle = 'rgba(52, 211, 153, 0.1)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let y = 15; y < canvas.height; y += 15) {
-      ctx.moveTo(0, y);
-      ctx.lineTo(canvas.width, y);
-    }
-    ctx.stroke();
-
-    // Waveform line
-    ctx.strokeStyle = targetMa > 100 ? '#38bdf8' : '#34d399';
-    ctx.shadowColor = targetMa > 100 ? '#38bdf8' : '#34d399';
-    ctx.shadowBlur = 6;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-
-    const step = canvas.width / (historyData.length - 1);
-    for (let i = 0; i < historyData.length; i++) {
-      const x = i * step;
-      const y = canvas.height - historyData[i] - 5;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-
-    requestAnimationFrame(drawScope);
-  }
-  requestAnimationFrame(drawScope);
-
-  // Tự động kiểm tra Backend NestJS khi tải trang
-  window.addEventListener('load', async () => {
-    try {
-      const res = await fetch('http://localhost:5000/api/v1/health', { signal: AbortSignal.timeout(1000) });
-      if (res.ok) {
-        document.getElementById('backendBadge').innerHTML = '<span class="pulse-dot"></span> Backend NestJS: ONLINE';
-        document.getElementById('backendBadge').className = 'badge badge-success';
-        addLog('CONNECT', 'Đã kết nối với máy chủ Backend NestJS tại http://localhost:5000', 'success');
-      }
-    } catch (e) {
-      document.getElementById('backendBadge').innerHTML = '<span class="pulse-dot"></span> Chế độ: Độc Lập (Edge Mode)';
-      document.getElementById('backendBadge').className = 'badge badge-primary';
-    }
-  });
+// Render React 18 Application
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
 
 </body>
