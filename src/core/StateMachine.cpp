@@ -8,17 +8,17 @@
 #include "../api/ApiClient.h"
 #include "config.h"
 
-// Device credentials for this firmware build (or read from NVS)
+// Device credentials for this firmware build (hoặc lưu trong NVS Flash)
 static const String DEVICE_ID = "BTN-8829-WTR";
 static const String DEVICE_SECRET = "sec_smart_button_8829_wtr_key_99";
 static const String BACKEND_URL = DEFAULT_BACKEND_URL;
 
-void StateMachine::run() {
+void StateMachine::init() {
   Serial.begin(115200);
   delay(50);
 
   Serial.println("\n==================================================");
-  Serial.println("🔘 SMART ORDER BUTTON — ESP32-S3 ULTRA LOW POWER FIRMWARE");
+  Serial.println("🔘 SMART ORDER BUTTON — ESP32-S3 PRODUCTION FIRMWARE");
   Serial.printf("Device ID: %s | Model: ESP32-S3-WROOM-1\n", DEVICE_ID.c_str());
   Serial.println("Schematic: Smart_Order_Button.kicad_sch");
   Serial.println("==================================================");
@@ -29,40 +29,67 @@ void StateMachine::run() {
   ButtonManager::init();
   PowerManager::init();
 
-  // CYAN: Device Boot visual indicator
+  // Hiệu ứng khởi động hệ thống: LED Trắng nhẹ 100ms & bíp khởi động
   LedManager::setColor(LED_WHITE);
-  delay(120);
+  BuzzerManager::beepBoot();
+  delay(100);
+  LedManager::setColor(LED_OFF);
 
   uint32_t batteryMv = PowerManager::readBatteryMillivolts();
   uint8_t batteryPct = PowerManager::calculateBatteryPercentage(batteryMv);
   Serial.printf("[POWER] MAX17048 Fuel Gauge: %u mV (%u%%)\n", batteryMv, batteryPct);
 
-  // 1. Detect Gesture (Non-blocking thresholds on SW1 / IO39)
-  ButtonGesture gesture = ButtonManager::detectGesture();
+  // Nếu người dùng đang giữ nút trong lúc cắm nguồn (Cold boot gesture)
+  if (ButtonManager::isPressed()) {
+    ButtonGesture gesture = ButtonManager::detectGesture(false);
+    handleGesture(gesture);
+  }
+}
 
-  // Gesture: Hold 15s -> Factory Reset
+void StateMachine::loop() {
+  // Đi vào chế độ ngủ tiết kiệm điện (Light Sleep qua IO39 hoặc Deep Sleep qua RTC IO10)
+  PowerManager::enterSleep();
+
+  // Khi bấm nút SW1, ESP32-S3 thức dậy ngay lập tức!
+  // Đọc cử chỉ phím với cờ wokenFromSleep = true
+  ButtonGesture gesture = ButtonManager::detectGesture(true);
+  handleGesture(gesture);
+}
+
+void StateMachine::run() {
+  init();
+  while (true) {
+    loop();
+  }
+}
+
+void StateMachine::handleGesture(ButtonGesture gesture) {
+  if (gesture == GESTURE_NONE) {
+    Serial.println("[GESTURE] Transient electrical bounce. Resuming sleep...");
+    return;
+  }
+
+  // 1. Gesture: Hold 15s -> Factory Reset
   if (gesture == GESTURE_HOLD_15S_FACTORY_RESET) {
     Serial.println("[RESET] Hold 15s detected: FACTORY RESETTING DEVICE...");
     WiFiManager::clearCredentials();
     LedManager::blink(LED_RED, 5, 100);
-    PowerManager::enterDeepSleep();
+    BuzzerManager::beepError();
     return;
   }
 
-  // Gesture: 5 Clicks (Quick Pairing Mode) or Hold 10s -> BLE 5 Auto-Pairing & WiFi Provisioning Mode
+  // 2. Gesture: 5 Clicks (Quick Pairing) hoặc Hold 10s hoặc chưa có thông tin Wi-Fi -> Bật BLE & SoftAP
   if (gesture == GESTURE_FIVE_CLICKS_PAIR || gesture == GESTURE_HOLD_10S_PROVISION || !WiFiManager::hasCredentials()) {
     Serial.println("[MODE] BLUE LED: 5-Clicks or Provision detected -> Starting BLE Auto-Pairing");
     LedManager::setColor(LED_BLUE);
     BuzzerManager::beepBoot();
 
-    // Name format: SOB-<DEVICE_ID> (e.g. SOB-BTN-8829-WTR) so Mobile app can auto-detect without typing ID
     String bleName = "SOB-" + DEVICE_ID;
     BLEProvisioning::start(bleName, DEVICE_ID);
     WiFiManager::startCaptivePortal(bleName + "-AP");
 
     unsigned long provisionStart = millis();
     while (millis() - provisionStart < (BLE_PROVISION_TIMEOUT_S * 1000)) {
-      // Blink BLUE LED softly during pairing
       if ((millis() / 500) % 2 == 0) {
         LedManager::setColor(LED_BLUE);
       } else {
@@ -71,30 +98,34 @@ void StateMachine::run() {
 
       WiFiManager::handleCaptivePortal();
       delay(20);
+
+      // Nếu đã lưu được thông tin Wi-Fi mới thì thoát chế độ cấu hình
+      if (WiFiManager::hasCredentials() && millis() - provisionStart > 3000) {
+        break;
+      }
     }
 
     BLEProvisioning::stop();
     WiFiManager::stopWiFi();
     LedManager::setColor(LED_OFF);
-    PowerManager::enterDeepSleep();
     return;
   }
 
-  // Gesture: Hold 5s -> Wake / Activate / Config Sync
+  // 3. Gesture: Hold 5s -> Wake / Activate / Config Sync
   if (gesture == GESTURE_HOLD_5S_ACTIVATE) {
     Serial.println("[MODE] PURPLE LED: Device Configuration / Activation Sync");
     LedManager::setColor(LED_PURPLE);
-    // Continue to connect Wi-Fi and sync config
+  } else if (gesture == GESTURE_DOUBLE_PRESS) {
+    Serial.println("[GESTURE] DOUBLE PRESS -> CANCEL ORDER");
+    LedManager::setColor(LED_YELLOW);
+  } else {
+    Serial.println("[GESTURE] SINGLE PRESS -> NEW ORDER");
+    LedManager::setColor(LED_BLUE);
   }
 
-  if (gesture == GESTURE_NONE) {
-    Serial.println("[GESTURE] Transient electrical bounce. Deep sleep immediately.");
-    PowerManager::enterDeepSleep();
-    return;
-  }
-
-  // 2. Wi-Fi Connection & Data Transmission -> YELLOW LED
-  LedManager::setColor(LED_YELLOW);
+  // 4. Kết nối Wi-Fi & Truyền sự kiện
+  uint32_t batteryMv = PowerManager::readBatteryMillivolts();
+  uint8_t batteryPct = PowerManager::calculateBatteryPercentage(batteryMv);
 
   bool connected = false;
   for (int retry = 1; retry <= WIFI_MAX_RETRIES; retry++) {
@@ -103,30 +134,28 @@ void StateMachine::run() {
       connected = true;
       break;
     }
-    delay(200);
+    delay(100);
   }
 
   if (!connected) {
     Serial.println("[WIFI] Connection failed. RED LED Error indication.");
     LedManager::setColor(LED_RED);
     BuzzerManager::beepError();
-    delay(1500);
+    delay(1200);
     WiFiManager::stopWiFi();
     LedManager::setColor(LED_OFF);
-    PowerManager::enterDeepSleep();
     return;
   }
 
-  // 3. Dispatch Event to Cloud via HMAC-SHA256
+  // 5. Chuẩn bị sự kiện gửi lên Cloud Backend
   String eventTypeStr = "SINGLE_PRESS";
   if (gesture == GESTURE_DOUBLE_PRESS) {
-    eventTypeStr = "DOUBLE_PRESS"; // Cancel order gesture
+    eventTypeStr = "DOUBLE_PRESS";
   } else if (gesture == GESTURE_HOLD_5S_ACTIVATE) {
     eventTypeStr = "ACTIVATE";
   }
 
   int8_t rssi = WiFi.RSSI();
-
   Serial.printf("[API] Transmitting event: %s (Batt: %d%%, RSSI: %d dBm)\n",
                 eventTypeStr.c_str(), batteryPct, rssi);
 
@@ -139,7 +168,7 @@ void StateMachine::run() {
       rssi
   );
 
-  // 4. Visual & Audio Feedback
+  // 6. Phản hồi LED & Còi Buzzer
   if (result.success) {
     if (gesture == GESTURE_DOUBLE_PRESS) {
       Serial.println("[SUCCESS] Order cancelled successfully by Double-Press.");
@@ -150,18 +179,16 @@ void StateMachine::run() {
       LedManager::setColor(LED_GREEN);
       BuzzerManager::beepSuccess();
     }
-    delay(1500);
+    delay(1200);
   } else {
     Serial.printf("[ERROR] RED LED: Cloud rejected request (%s)\n",
                   result.errorMessage.c_str());
     LedManager::setColor(LED_RED);
     BuzzerManager::beepError();
-    delay(1500);
+    delay(1200);
   }
 
-  // 5. Radio Shutdown & Deep Sleep Entry
-  Serial.println("[POWER] Shutting down Wi-Fi radio and entering Deep Sleep (~15uA)...");
+  // 7. Tắt Wi-Fi và LED trước khi quay lại chế độ ngủ
   WiFiManager::stopWiFi();
   LedManager::setColor(LED_OFF);
-  PowerManager::enterDeepSleep();
 }

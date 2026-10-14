@@ -1,18 +1,18 @@
 /**
  * =========================================================================================
  * 🔘 SMART ORDER BUTTON — PRODUCTION ESP32-S3 FIRMWARE
- * 📐 KHỚP 100% SƠ ĐỒ NGUYÊN LÝ KICAD: Smart_Order_Button.kicad_sch
+ * 📐 KHỚP 100% SƠ ĐỒ NGUYÊN LÝ KICAD: Smart_Order_Button.kicad_sch & PCB LAYOUT
  * =========================================================================================
  * 
  * 🔌 PHẦN CỨNG & BẢN ĐỒ CHÂN (HARDWARE PINOUT MAPPING):
  * - Vi điều khiển       : ESP32-S3-WROOM-1 (U1)
- * - Nút Bấm SW1        : IO39 (Pin 19) - Net BTN_ORDER (Nối GND, INPUT_PULLUP, Active LOW)
+ * - Nút Bấm SW1         : IO39 (Pin 32) - Net BTN_ORDER (Nối GND, INPUT_PULLUP, Active LOW)
  * - Đèn LED Đỏ (LED_R)  : IO7  (Pin 7)  - Catot D1 qua trở R15 1kΩ (Active LOW)
  * - Đèn LED Xanh (LED_G): IO6  (Pin 6)  - Catot D1 qua trở R16 470Ω (Active LOW)
  * - Đèn LED Lam (LED_B) : IO8  (Pin 12) - Catot D1 qua trở R17 470Ω (Active LOW)
  *   (Ghi chú: LED RGB D1 là loại Common Anode nối nguồn +3.3V, LOW = SÁNG, HIGH = TẮT)
  * - Còi Buzzer BZ1      : IO2  (Pin 38) - Kích Transistor Q1 2N7002 qua Net BUZZER_CTRL (Active HIGH)
- * - Cảm biến Pin U6    : MAX17048G_T10 (Địa chỉ I2C 0x36)
+ * - Cảm biến Pin U6     : MAX17048G_T10 (Địa chỉ I2C 0x36)
  *                         SDA = IO4 (Pin 4, Net I2C_SDA, trở treo R9 4.7kΩ)
  *                         SCL = IO5 (Pin 5, Net I2C_SCL, trở treo R3 4.7kΩ)
  * - Cổng USB Type-C     : Native USB-JTAG/CDC (IO19 USB_DN, IO20 USB_DP) qua IC U2 USBLC6-2SC6
@@ -32,13 +32,14 @@
  *    - Nhấn đúp (<1.2s)       : Hủy đơn hàng trong 60s (Double Click) -> LED Vàng -> Đỏ.
  *    - Nhấn 5 lần / Giữ 10s   : Bật chế độ cấu hình Wi-Fi BLE & SoftAP -> Nháy LED Xanh dương.
  *    - Nhấn giữ 15s           : Khôi phục cài đặt gốc (Factory Reset NVS).
- * 5. ULTRA-LOW POWER DEEP SLEEP:
- *    - Chế độ ngủ sâu tự động tiêu thụ <15µA, đánh thức tức thì khi bấm nút SW1 (IO39 LOW).
+ * 5. ULTRA-LOW POWER SLEEP:
+ *    - Chế độ ngủ tự động tiêu thụ cực thấp, đánh thức tức thì khi bấm nút SW1 (IO39 LOW).
  * =========================================================================================
  */
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <esp_wifi.h>
 #include <Preferences.h>
 #include <HTTPClient.h>
 #include <Wire.h>
@@ -52,14 +53,14 @@
 // =========================================================================================
 // ⚠️ QUAN TRỌNG VỀ PHẦN CỨNG ESP32-S3:
 // IO39 thuộc HP Domain (không thuộc RTC IO 0-21) nên không thể dùng ext0 wakeup deep sleep.
-// - Đặt USE_HARDWARE_MOD_RTC_PIN = 0: Dùng chân IO39 KiCad gốc (Tự động vào Light Sleep, bấm SW1 thức dậy 100%).
+// - Đặt USE_HARDWARE_MOD_RTC_PIN = 0: Dùng chân IO39 KiCad gốc (Tự động vào Light Sleep, bấm SW1 thức dậy ngay <50us).
 // - Đặt USE_HARDWARE_MOD_RTC_PIN = 1: Đã câu dây phần cứng SW1 sang IO10 -> Cho phép Deep Sleep <15uA.
-#define USE_HARDWARE_MOD_RTC_PIN  0    // Đổi thành 1 khi đã câu dây SW1 sang IO10 (Pin 14 U1)
+#define USE_HARDWARE_MOD_RTC_PIN  0    // Đổi thành 1 khi đã câu dây SW1 sang IO10 (Pin 18 U1)
 
 #if USE_HARDWARE_MOD_RTC_PIN
-#define PIN_BTN_ORDER        10   // IO10 (Pin 14) - RTC GPIO Wakeup chuẩn <15uA
+#define PIN_BTN_ORDER        10   // IO10 (Pin 18) - RTC GPIO Wakeup chuẩn <15uA
 #else
-#define PIN_BTN_ORDER        39   // IO39 (Pin 20) - Net BTN_ORDER KiCad gốc
+#define PIN_BTN_ORDER        39   // IO39 (Pin 32) - Net BTN_ORDER KiCad gốc
 #endif
 
 #define PIN_LED_R            7    // IO7  - LED Đỏ qua R15 1k (Active LOW)
@@ -98,25 +99,18 @@ const char* FIRMWARE_VER    = "4.5.0-ESP32S3";
 
 // Địa chỉ mặc định của NestJS Backend
 const char* DEFAULT_CLOUD_URL = "http://192.168.1.50:5000";
-String cloudUrl = DEFAULT_CLOUD_URL;
 
+// Cấu hình mạng & bộ nhớ NVS
 Preferences prefs;
 String savedSsid = "";
 String savedPass = "";
-WiFiServer server(80);
-bool isProvisioningMode = false;
-unsigned long provisioningStartTime = 0;
-const unsigned long PROVISIONING_TIMEOUT_MS = 180000; // 3 phút timeout
+String cloudUrl  = DEFAULT_CLOUD_URL;
 
-#if ENABLE_BLE
-static BLEServer *pBleServer = nullptr;
-static BLECharacteristic *pBleStatusChar = nullptr;
-static BLECharacteristic *pBleScanChar = nullptr;
-static bool bleConnected = false;
-#endif
+#define PROVISIONING_TIMEOUT_MS 180000 // 3 phút
+WiFiServer server(80);
 
 // =========================================================================================
-// 💡 4. ĐIỀU KHIỂN ĐÈN LED RGB COMMON ANODE (LOW = BẬT, HIGH = TẮT)
+// 💡 4. ĐIỀU KHIỂN ĐÈN LED RGB COMMON ANODE (ACTIVE LOW)
 // =========================================================================================
 enum ButtonLedColor {
   COLOR_OFF,
@@ -185,57 +179,63 @@ void blinkLed(ButtonLedColor color, int times = 2, int delayMs = 120) {
 }
 
 // =========================================================================================
-// 🔊 5. ĐIỀU KHIỂN CÒI BUZZER (ACTIVE HIGH QUA MOSFET Q1 2N7002)
+// 🔊 5. ĐIỀU KHIỂN CÒI BUZZER (HỖ TRỢ CẢ PASSIVE PIEZO & ACTIVE BUZZER)
 // =========================================================================================
-void buzzerBeep(int durationMs = 80) {
-  digitalWrite(PIN_BUZZER, HIGH);
+void buzzerPlayTone(uint32_t freq, uint32_t durationMs) {
+  tone(PIN_BUZZER, freq, durationMs);
   delay(durationMs);
+  noTone(PIN_BUZZER);
   digitalWrite(PIN_BUZZER, LOW);
+}
+
+void buzzerBeep(int durationMs = 80) {
+  buzzerPlayTone(2700, durationMs);
 }
 
 void buzzerClick() {
-  buzzerBeep(35);
+  buzzerPlayTone(3000, 40);
 }
 
 void buzzerSuccess() {
-  digitalWrite(PIN_BUZZER, HIGH);
+  buzzerPlayTone(2700, 70);
   delay(60);
-  digitalWrite(PIN_BUZZER, LOW);
-  delay(60);
-  digitalWrite(PIN_BUZZER, HIGH);
-  delay(120);
-  digitalWrite(PIN_BUZZER, LOW);
+  buzzerPlayTone(3500, 90);
 }
 
 void buzzerError() {
   for (int i = 0; i < 3; i++) {
-    digitalWrite(PIN_BUZZER, HIGH);
-    delay(90);
-    digitalWrite(PIN_BUZZER, LOW);
+    buzzerPlayTone(2200, 100);
     if (i < 2) delay(60);
   }
 }
 
 void buzzerCancel() {
-  digitalWrite(PIN_BUZZER, HIGH);
-  delay(350);
-  digitalWrite(PIN_BUZZER, LOW);
+  buzzerPlayTone(1800, 320);
 }
 
 // =========================================================================================
-// 🔋 6. TRÌNH ĐIỀU KHIỂN CẢM BIẾN ĐO PIN MAX17048 (I2C ADDR: 0x36)
+// 🔋 6. GIAO TIẾP IC ĐO DUNG LƯỢNG PIN MAX17048G_T10 (I2C)
 // =========================================================================================
+bool max17048Present = false;
+
 bool initMAX17048() {
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL, 100000);
-  delay(10);
+  delay(20);
   Wire.beginTransmission(MAX17048_I2C_ADDR);
-  return (Wire.endTransmission() == 0);
+  if (Wire.endTransmission() == 0) {
+    max17048Present = true;
+    return true;
+  }
+  max17048Present = false;
+  return false;
 }
 
-uint16_t readMAX17048Reg(uint8_t reg) {
+uint16_t readRegister16(uint8_t reg) {
+  if (!max17048Present) return 0;
   Wire.beginTransmission(MAX17048_I2C_ADDR);
   Wire.write(reg);
   if (Wire.endTransmission(false) != 0) return 0;
+
   if (Wire.requestFrom((uint8_t)MAX17048_I2C_ADDR, (uint8_t)2) == 2) {
     uint8_t msb = Wire.read();
     uint8_t lsb = Wire.read();
@@ -245,50 +245,33 @@ uint16_t readMAX17048Reg(uint8_t reg) {
 }
 
 uint32_t getBatteryMv() {
-  uint16_t raw = readMAX17048Reg(0x02); // VCELL register
-  if (raw == 0) return 3850; // Dự phòng điện áp danh định
+  if (!max17048Present) return 3850;
+  uint16_t raw = readRegister16(0x02); // Thanh ghi VCELL
+  if (raw == 0) return 3850;
   return (uint32_t)(((raw >> 4) * 5) / 4);
 }
 
 float getBatterySOC() {
-  uint16_t raw = readMAX17048Reg(0x04); // SOC register
+  if (!max17048Present) return 85.0f;
+  uint16_t raw = readRegister16(0x04); // Thanh ghi SOC
   if (raw == 0) return 85.0f;
-  uint8_t intPct = (uint8_t)(raw >> 8);
-  float fracPct = (float)(raw & 0xFF) / 256.0f;
-  float soc = (float)intPct + fracPct;
-  if (soc > 100.0f) soc = 100.0f;
-  if (soc < 0.0f) soc = 0.0f;
-  return soc;
+  uint8_t intPart = (uint8_t)(raw >> 8);
+  float fracPart = (float)(raw & 0xFF) / 256.0f;
+  float soc = (float)intPart + fracPart;
+  return constrain(soc, 0.0f, 100.0f);
 }
 
 // =========================================================================================
 // 🔒 7. BẢO MẬT CHỮ KÝ HMAC-SHA256 & SINH SỐ NGẪU NHIÊN NONCE
 // =========================================================================================
-String generateNonce() {
-  uint8_t randBytes[16];
-  for (int i = 0; i < 16; i += 4) {
-    uint32_t r = esp_random();
-    randBytes[i]     = (uint8_t)(r & 0xFF);
-    randBytes[i + 1] = (uint8_t)((r >> 8) & 0xFF);
-    randBytes[i + 2] = (uint8_t)((r >> 16) & 0xFF);
-    randBytes[i + 3] = (uint8_t)((r >> 24) & 0xFF);
-  }
-  char hexStr[33];
-  for (int i = 0; i < 16; i++) {
-    sprintf(hexStr + (i * 2), "%02x", randBytes[i]);
-  }
-  hexStr[32] = '\0';
-  return String(hexStr);
-}
-
-String computeHMAC(const String& payload, const char* key) {
-  byte hmacResult[32];
+String computeHMAC(const String &payload, const String &key) {
+  uint8_t hmacResult[32];
   mbedtls_md_context_t ctx;
   mbedtls_md_type_t md_type = MBEDTLS_MD_SHA256;
 
   mbedtls_md_init(&ctx);
   mbedtls_md_setup(&ctx, mbedtls_md_info_from_type(md_type), 1);
-  mbedtls_md_hmac_starts(&ctx, (const unsigned char*)key, strlen(key));
+  mbedtls_md_hmac_starts(&ctx, (const unsigned char*)key.c_str(), key.length());
   mbedtls_md_hmac_update(&ctx, (const unsigned char*)payload.c_str(), payload.length());
   mbedtls_md_hmac_finish(&ctx, hmacResult);
   mbedtls_md_free(&ctx);
@@ -297,37 +280,48 @@ String computeHMAC(const String& payload, const char* key) {
   for (int i = 0; i < 32; i++) {
     sprintf(&hexString[i * 2], "%02x", (unsigned int)hmacResult[i]);
   }
-  hexString[64] = '\0';
+  hexString[64] = 0;
   return String(hexString);
 }
 
-// =========================================================================================
-// 🌐 8. ĐỒNG BỘ THỜI GIAN NTP & GỬI TÍN HIỆU ĐẾN BACKEND NESTJS
-// =========================================================================================
-bool syncNTP() {
-  configTime(7 * 3600, 0, "pool.ntp.org", "time.google.com");
-  time_t now = time(nullptr);
-  int retries = 0;
-  while (now < 1700000000 && retries < 15) {
-    delay(200);
-    now = time(nullptr);
-    retries++;
+String generateNonce() {
+  char nonceBuf[33];
+  for (int i = 0; i < 4; i++) {
+    uint32_t r = esp_random();
+    sprintf(&nonceBuf[i * 8], "%08x", r);
   }
-  return (now >= 1700000000);
+  nonceBuf[32] = 0;
+  return String(nonceBuf);
 }
 
-bool sendOrderEvent(const String& eventType, String& outOrderCode, String& outErrorMsg) {
-  setLed(COLOR_BLUE); // Đèn xanh dương biểu thị đang phát dữ liệu
-  buzzerClick();
+void syncNTP() {
+  configTime(7 * 3600, 0, "pool.ntp.org", "time.google.com", "time.cloudflare.com");
+  time_t now = time(nullptr);
+  int retry = 0;
+  while (now < 1000000000L && retry < 15) {
+    delay(100);
+    now = time(nullptr);
+    retry++;
+  }
+}
 
+// =========================================================================================
+// 🌐 8. TRUYỀN DỮ LIỆU ĐẾN BACKEND NESTJS
+// =========================================================================================
+bool sendOrderEvent(const String &eventType, String &outOrderCode, String &outErrorMsg) {
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("[WIFI] Mất kết nối Wi-Fi. Đang kết nối lại...");
-    WiFi.setTxPower(WIFI_POWER_15dBm); // 15dBm an toàn cho LDO ME6211 (500mA) không bị sụt áp
+    if (savedSsid.length() == 0) {
+      outErrorMsg = "Chưa cấu hình Wi-Fi";
+      return false;
+    }
+
+    WiFi.mode(WIFI_STA);
+    WiFi.setTxPower(WIFI_POWER_15dBm); // 15dBm an toàn cho LDO ME6211 (500mA)
     WiFi.begin(savedSsid.c_str(), savedPass.c_str());
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 25) {
-      delay(200);
-      attempts++;
+
+    unsigned long startConn = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - startConn < 6000) {
+      delay(80);
     }
     if (WiFi.status() != WL_CONNECTED) {
       outErrorMsg = "Không thể kết nối Wi-Fi";
@@ -362,11 +356,18 @@ bool sendOrderEvent(const String& eventType, String& outOrderCode, String& outEr
   String signature = computeHMAC(signaturePayload, DEVICE_SECRET);
 
   Serial.println("[HMAC] Đang gửi gói tin có chữ ký bảo mật tới Cloud:");
-  Serial.printf("  Endpoint : %s/api/iot/events\n", cloudUrl.c_str());
+  Serial.printf("  Endpoint : %s/api/v1/iot/events\n", cloudUrl.c_str());
   Serial.printf("  Signature: %s\n", signature.c_str());
 
   HTTPClient http;
-  http.begin(cloudUrl + "/api/iot/events");
+  String endpoint = cloudUrl;
+  if (!endpoint.endsWith("/api/v1/iot/events")) {
+    while (endpoint.endsWith("/")) endpoint = endpoint.substring(0, endpoint.length() - 1);
+    if (!endpoint.endsWith("/api/v1")) endpoint += "/api/v1";
+    endpoint += "/iot/events";
+  }
+
+  http.begin(endpoint);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("x-device-id", DEVICE_ID);
   http.addHeader("x-timestamp", timestampStr);
@@ -390,33 +391,31 @@ bool sendOrderEvent(const String& eventType, String& outOrderCode, String& outEr
 }
 
 // =========================================================================================
-// 💤 9. QUẢN LÝ CHẾ ĐỘ NGỦ SÂU (AMAZON DASH DEEP SLEEP)
+// 💤 9. QUẢN LÝ CHẾ ĐỘ NGỦ (LIGHT SLEEP / DEEP SLEEP)
 // =========================================================================================
-void enterUltraDeepSleep() {
-  Serial.println("[SLEEP] Tắt module Wi-Fi & Bluetooth. Vào chế độ ngủ tiết kiệm điện...");
+void enterUltraSleep() {
+  Serial.println("[SLEEP] Tắt module Wi-Fi. Vào chế độ ngủ tiết kiệm điện...");
   setLed(COLOR_OFF);
   digitalWrite(PIN_BUZZER, LOW);
+  WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
+  esp_wifi_stop();
   Serial.flush();
 
 #if USE_HARDWARE_MOD_RTC_PIN
   // Với mạch đã câu dây sang chân RTC IO10:
-  Serial.println("[SLEEP] Vào DEEP SLEEP (<15uA) qua RTC GPIO IO10. Sẵn sàng thức dậy khi bấm SW1!");
+  Serial.println("[SLEEP] Vào DEEP SLEEP (<15uA) qua RTC GPIO IO10...");
+  Serial.flush();
   esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_BTN_ORDER, 0);
   esp_deep_sleep_start();
 #else
   // Với mạch nguyên bản KiCad IO39:
-  Serial.println("[SLEEP] ⚠️ Chân IO39 là HP GPIO -> Vào LIGHT SLEEP an toàn (vẫn thức dậy khi bấm SW1)!");
-  Serial.println("[SLEEP] (Mẹo: Câu dây SW1 sang IO10 để kích hoạt Deep Sleep <15uA)");
-  Serial.flush();
-
+  // Dùng Light Sleep an toàn: thức dậy ngay lập tức trong <50us mà không bị reboot!
   gpio_wakeup_enable((gpio_num_t)PIN_BTN_ORDER, GPIO_INTR_LOW_LEVEL);
   esp_sleep_enable_gpio_wakeup();
   esp_light_sleep_start();
 
-  Serial.println("[SLEEP] >>> Thức dậy từ Light Sleep khi bấm SW1! Khởi động lại hệ thống...");
-  delay(50);
-  ESP.restart();
+  Serial.println("[SLEEP] >>> Thức dậy từ Light Sleep khi bấm SW1!");
 #endif
 }
 
@@ -433,36 +432,39 @@ enum GestureType {
   GESTURE_HOLD_15S_FACTORY_RESET
 };
 
-GestureType scanButtonGesture() {
-  if (digitalRead(PIN_BTN_ORDER) == HIGH) {
+GestureType scanButtonGesture(bool wokenFromSleep = false) {
+  bool initiallyLow = (digitalRead(PIN_BTN_ORDER) == LOW);
+
+  if (!initiallyLow && !wokenFromSleep) {
     return GESTURE_NONE;
   }
 
   unsigned long pressStart = millis();
 
-  // Đếm thời gian giữ nút
-  while (digitalRead(PIN_BTN_ORDER) == LOW) {
-    unsigned long heldMs = millis() - pressStart;
-    if (heldMs >= 15000) {
-      while (digitalRead(PIN_BTN_ORDER) == LOW) delay(10);
-      return GESTURE_HOLD_15S_FACTORY_RESET;
+  // Đếm thời gian giữ nút nếu phím đang được giữ
+  if (initiallyLow) {
+    while (digitalRead(PIN_BTN_ORDER) == LOW) {
+      unsigned long heldMs = millis() - pressStart;
+      if (heldMs >= 15000) {
+        while (digitalRead(PIN_BTN_ORDER) == LOW) delay(10);
+        return GESTURE_HOLD_15S_FACTORY_RESET;
+      }
+      delay(10);
     }
-    delay(10);
+
+    unsigned long totalHeldMs = millis() - pressStart;
+    if (totalHeldMs >= 10000) return GESTURE_HOLD_10S_PROVISION;
+    if (totalHeldMs >= 5000)  return GESTURE_HOLD_5S_ACTIVATE;
   }
 
-  unsigned long totalHeldMs = millis() - pressStart;
-  if (totalHeldMs >= 10000) return GESTURE_HOLD_10S_PROVISION;
-  if (totalHeldMs >= 5000)  return GESTURE_HOLD_5S_ACTIVATE;
-  if (totalHeldMs < 50)     return GESTURE_NONE; // Nhiễu cơ học
-
-  // Nút đã nhả nhanh (<5s) -> Quét nhấn đúp hoặc 5 lần nhấn
+  // Quét nhấn đúp hoặc 5 lần nhấn
   int clicks = 1;
   unsigned long lastRelease = millis();
   const unsigned long MULTI_CLICK_WINDOW = 450;
 
   while (millis() - lastRelease < MULTI_CLICK_WINDOW) {
     if (digitalRead(PIN_BTN_ORDER) == LOW) {
-      delay(50);
+      delay(30);
       if (digitalRead(PIN_BTN_ORDER) == LOW) {
         clicks++;
         while (digitalRead(PIN_BTN_ORDER) == LOW) delay(10);
@@ -477,51 +479,8 @@ GestureType scanButtonGesture() {
   return GESTURE_SINGLE_CLICK;
 }
 
-// =========================================================================================
-// 🚀 11. KHỞI ĐỘNG HỆ THỐNG (ARDUINO SETUP)
-// =========================================================================================
-void setup() {
-  // Hạ xung nhịp CPU xuống 80MHz để triệt tiêu sốc dòng trên LDO ME6211C33M5G (500mA)
-  setCpuFrequencyMhz(80);
-
-  Serial.begin(115200);
-  delay(100);
-
-  Serial.println("\n========================================================");
-  Serial.println("🔘 SMART ORDER BUTTON — ESP32-S3 PRODUCTION FIRMWARE");
-  Serial.printf("  Device ID : %s | Model: ESP32-S3-WROOM-1\n", DEVICE_ID);
-  Serial.println("  Schematic : Smart_Order_Button.kicad_sch");
-  Serial.println("========================================================");
-
-  // Cấu hình chân
-  pinMode(PIN_BTN_ORDER, INPUT_PULLUP);
-  pinMode(PIN_LED_R, OUTPUT);
-  pinMode(PIN_LED_G, OUTPUT);
-  pinMode(PIN_LED_B, OUTPUT);
-  pinMode(PIN_BUZZER, OUTPUT);
-  digitalWrite(PIN_BUZZER, LOW);
-  setLed(COLOR_OFF);
-
-  // Khởi động IC đo pin MAX17048 qua I2C (IO4/IO5)
-  if (initMAX17048()) {
-    Serial.println("[SENSOR] IC MAX17048 sẵn sàng trên I2C (0x36).");
-  } else {
-    Serial.println("[SENSOR] Chú ý: Chưa tìm thấy IC MAX17048; sử dụng giá trị mô phỏng.");
-  }
-
-  // Đọc bộ nhớ NVS Flash lấy thông tin Wi-Fi
-  prefs.begin("sob_config", false);
-  savedSsid = prefs.getString("wifi_ssid", "");
-  savedPass = prefs.getString("wifi_pass", "");
-  cloudUrl  = prefs.getString("cloud_url", DEFAULT_CLOUD_URL);
-
-  // Hiệu ứng đèn khởi động (Cyan nhẹ)
-  setLed(COLOR_CYAN);
-  delay(150);
-  setLed(COLOR_OFF);
-
-  // Quét cử chỉ nút bấm SW1
-  GestureType gesture = scanButtonGesture();
+void processGesture(GestureType gesture) {
+  if (gesture == GESTURE_NONE) return;
 
   // Khôi phục cài đặt gốc
   if (gesture == GESTURE_HOLD_15S_FACTORY_RESET) {
@@ -530,7 +489,7 @@ void setup() {
     setLed(COLOR_RED);
     buzzerError();
     delay(1000);
-    enterUltraDeepSleep();
+    setLed(COLOR_OFF);
     return;
   }
 
@@ -540,8 +499,8 @@ void setup() {
     setLed(COLOR_BLUE);
     buzzerBeep(120);
 
-    // Mở SoftAP fallback
     String apSsid = "SMARTORDER_" + String(DEVICE_ID);
+    WiFi.mode(WIFI_AP);
     WiFi.softAP(apSsid.c_str(), "12345678");
     server.begin();
 
@@ -553,14 +512,6 @@ void setup() {
     }
 
     setLed(COLOR_OFF);
-    enterUltraDeepSleep();
-    return;
-  }
-
-  // Nếu không có thao tác bấm phím (ví dụ cắm sạc, khởi động nguồn hoặc nhiễu điện)
-  if (gesture == GESTURE_NONE) {
-    Serial.println("[GESTURE] Khởi động nguồn hoặc không có thao tác nhấn SW1. Vào chế độ ngủ...");
-    enterUltraDeepSleep();
     return;
   }
 
@@ -569,8 +520,10 @@ void setup() {
   if (gesture == GESTURE_DOUBLE_CLICK) {
     eventType = "CANCEL";
     Serial.println("[GESTURE] Phát hiện NHẤN ĐÚP: Gửi yêu cầu HỦY ĐƠN HÀNG...");
+    setLed(COLOR_YELLOW);
   } else {
     Serial.println("[GESTURE] Phát hiện NHẤN 1 LẦN: Gửi yêu cầu ĐẶT HÀNG MỚI...");
+    setLed(COLOR_BLUE);
   }
 
   String orderCode, errorMsg;
@@ -594,10 +547,65 @@ void setup() {
     delay(1200);
   }
 
-  // Tự động vào chế độ ngủ sâu tiết kiệm pin
-  enterUltraDeepSleep();
+  setLed(COLOR_OFF);
+}
+
+// =========================================================================================
+// 🚀 11. KHỞI ĐỘNG HỆ THỐNG & VÒNG LẶP SỰ KIỆN CHÍNH
+// =========================================================================================
+void setup() {
+  // Hạ xung nhịp CPU xuống 80MHz để triệt tiêu sốc dòng trên LDO ME6211C33M5G (500mA)
+  setCpuFrequencyMhz(80);
+
+  Serial.begin(115200);
+  delay(50);
+
+  Serial.println("\n========================================================");
+  Serial.println("🔘 SMART ORDER BUTTON — ESP32-S3 PRODUCTION FIRMWARE");
+  Serial.printf("  Device ID : %s | Model: ESP32-S3-WROOM-1\n", DEVICE_ID);
+  Serial.println("  Schematic : Smart_Order_Button.kicad_sch");
+  Serial.println("========================================================");
+
+  // Cấu hình chân
+  pinMode(PIN_BTN_ORDER, INPUT_PULLUP);
+  pinMode(PIN_LED_R, OUTPUT);
+  pinMode(PIN_LED_G, OUTPUT);
+  pinMode(PIN_LED_B, OUTPUT);
+  pinMode(PIN_BUZZER, OUTPUT);
+  digitalWrite(PIN_BUZZER, LOW);
+  setLed(COLOR_OFF);
+
+  // Khởi động IC đo pin MAX17048 qua I2C (IO4/IO5)
+  if (initMAX17048()) {
+    Serial.println("[SENSOR] IC MAX17048 sẵn sàng trên I2C (0x36).");
+  } else {
+    Serial.println("[SENSOR] Chú ý: Chưa tìm thấy IC MAX17048; sử dụng giá trị mặc định.");
+  }
+
+  // Đọc bộ nhớ NVS Flash lấy thông tin Wi-Fi
+  prefs.begin("sob_config", false);
+  savedSsid = prefs.getString("wifi_ssid", "");
+  savedPass = prefs.getString("wifi_pass", "");
+  cloudUrl  = prefs.getString("cloud_url", DEFAULT_CLOUD_URL);
+
+  // Hiệu ứng đèn khởi động (Cyan nhẹ)
+  setLed(COLOR_CYAN);
+  buzzerClick();
+  delay(100);
+  setLed(COLOR_OFF);
+
+  // Nếu người dùng đang giữ nút trong lúc cắm nguồn
+  if (digitalRead(PIN_BTN_ORDER) == LOW) {
+    GestureType gesture = scanButtonGesture(false);
+    processGesture(gesture);
+  }
 }
 
 void loop() {
-  // Không bao giờ chạy tới loop() vì hệ thống luôn vào Deep Sleep trong setup()
+  // Đi vào chế độ ngủ tiết kiệm điện (Light Sleep qua IO39 hoặc Deep Sleep qua RTC IO10)
+  enterUltraSleep();
+
+  // Thức dậy tức thì khi người dùng bấm SW1!
+  GestureType gesture = scanButtonGesture(true);
+  processGesture(gesture);
 }

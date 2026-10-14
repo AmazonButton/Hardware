@@ -4,57 +4,65 @@ void ButtonManager::init() {
   pinMode(PIN_BUTTON, INPUT_PULLUP);
 }
 
-ButtonGesture ButtonManager::detectGesture() {
-  if (digitalRead(PIN_BUTTON) == HIGH) {
+bool ButtonManager::isPressed() {
+  return (digitalRead(PIN_BUTTON) == LOW);
+}
+
+ButtonGesture ButtonManager::detectGesture(bool wokenFromSleep) {
+  bool initiallyLow = (digitalRead(PIN_BUTTON) == LOW);
+
+  // Nếu không thức dậy từ sleep và nút không được nhấn -> Không có thao tác
+  if (!initiallyLow && !wokenFromSleep) {
     return GESTURE_NONE;
   }
 
   unsigned long pressStart = millis();
 
-  // 1. Measure hold duration (non-blocking sampling)
-  while (digitalRead(PIN_BUTTON) == LOW) {
-    unsigned long heldMs = millis() - pressStart;
+  // 1. Nếu nút đang được đè giữ (LOW): Đo chính xác thời lượng giữ
+  if (initiallyLow) {
+    while (digitalRead(PIN_BUTTON) == LOW) {
+      unsigned long heldMs = millis() - pressStart;
 
-    if (heldMs >= HOLD_15S_FACTORY_RESET_MS) {
-      // Held >= 15 seconds -> Factory Reset
-      while (digitalRead(PIN_BUTTON) == LOW) delay(10);
-      return GESTURE_HOLD_15S_FACTORY_RESET;
+      // Giữ >= 15 giây -> Khôi phục cài đặt gốc
+      if (heldMs >= HOLD_15S_FACTORY_RESET_MS) {
+        while (digitalRead(PIN_BUTTON) == LOW) delay(10);
+        return GESTURE_HOLD_15S_FACTORY_RESET;
+      }
+      delay(10);
     }
-    delay(10);
+
+    unsigned long totalHeldMs = millis() - pressStart;
+
+    // Giữ từ 10s đến 15s -> Cấu hình Wi-Fi BLE 5 & SoftAP
+    if (totalHeldMs >= HOLD_10S_PROVISION_MS) {
+      return GESTURE_HOLD_10S_PROVISION;
+    }
+
+    // Giữ từ 5s đến 10s -> Kích hoạt / Đồng bộ tham số cấu hình
+    if (totalHeldMs >= HOLD_5S_ACTIVATE_MS) {
+      return GESTURE_HOLD_5S_ACTIVATE;
+    }
+
+    // Nếu không phải giữ lâu thì đây là 1 lần nhấn hợp lệ (<5s)
   }
 
-  unsigned long totalHeldMs = millis() - pressStart;
-
-  if (totalHeldMs >= HOLD_10S_PROVISION_MS) {
-    // Held between 10s and 15s -> WiFi Provisioning Mode
-    return GESTURE_HOLD_10S_PROVISION;
-  }
-
-  if (totalHeldMs >= HOLD_5S_ACTIVATE_MS) {
-    // Held between 5s and 10s -> Wake / Activate Device
-    return GESTURE_HOLD_5S_ACTIVATE;
-  }
-
-  if (totalHeldMs < DEBOUNCE_MS) {
-    return GESTURE_NONE; // Electrical bounce noise
-  }
-
-  // 2. Button was released quickly (< 5s). Check for multi-presses (double click or 5-click pair)
+  // 2. Chờ phát hiện nhấn đúp hoặc 5 lần nhấn (Multi-click window)
   int clickCount = 1;
   unsigned long lastReleaseTime = millis();
-  const unsigned long MULTI_CLICK_WINDOW_MS = 450; // max gap between taps
+  const unsigned long MULTI_CLICK_WINDOW_MS = 450; // Khoảng thời gian chờ click tiếp theo
 
   while (millis() - lastReleaseTime < MULTI_CLICK_WINDOW_MS) {
     if (digitalRead(PIN_BUTTON) == LOW) {
       delay(DEBOUNCE_MS);
       if (digitalRead(PIN_BUTTON) == LOW) {
         clickCount++;
-        // Wait until release
+        // Chờ nhả phím
         while (digitalRead(PIN_BUTTON) == LOW) {
           delay(10);
         }
         lastReleaseTime = millis();
 
+        // 5 lần bấm nhanh liên tiếp -> Bật cấu hình nhanh BLE
         if (clickCount >= 5) {
           return GESTURE_FIVE_CLICKS_PAIR;
         }

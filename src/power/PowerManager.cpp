@@ -1,11 +1,15 @@
 #include "PowerManager.h"
-#include <Wire.h>
+#include <WiFi.h>
+#include <esp_wifi.h>
 
 static MAX17048 s_gauge;
 
 void PowerManager::init() {
   // Hạ tần số CPU xuống 80MHz để tránh sốc dòng trên IC hạ áp LDO ME6211 (500mA)
   setCpuFrequencyMhz(ESP32_CPU_FREQ_MHZ);
+
+  // Khởi tạo chân nút bấm SW1 có điện trở kéo lên nội bộ
+  pinMode(PIN_BUTTON, INPUT_PULLUP);
 
   // Initialize MAX17048 I2C Fuel Gauge on IO4 (SDA) and IO5 (SCL)
   bool gaugeOk = s_gauge.begin(PIN_I2C_SDA, PIN_I2C_SCL);
@@ -14,45 +18,33 @@ void PowerManager::init() {
   } else {
     Serial.println("[POWER] Note: MAX17048 I2C not responding; fallback to nominal estimation.");
   }
+}
 
-  // Đảm bảo chân nút bấm có trở kéo lên
-  pinMode(PIN_BUTTON, INPUT_PULLUP);
+void PowerManager::enterSleep() {
+  // Tắt hoàn toàn ngoại vi sóng vô tuyến Wi-Fi để tiết kiệm năng lượng
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
+  esp_wifi_stop();
+  Serial.println("[POWER] Wi-Fi stopped. Entering ultra low power sleep, waiting for SW1...");
+  Serial.flush();
 
 #if USE_HARDWARE_MOD_RTC_PIN
   // Với mạch đã câu dây SW1 sang IO10 (RTC GPIO): hỗ trợ Deep Sleep ext0 chuẩn <15uA
-  esp_sleep_enable_ext0_wakeup(PIN_BUTTON, 0);
-  Serial.println("[POWER] Configured RTC Wakeup on IO10 (Deep Sleep Mode ready).");
-#else
-  // Với mạch nguyên bản KiCad (IO39 thuộc HP domain):
-  // Cấu hình GPIO wakeup tương thích an toàn trên ESP32-S3
-  gpio_wakeup_enable(PIN_BUTTON, GPIO_INTR_LOW_LEVEL);
-  esp_sleep_enable_gpio_wakeup();
-  Serial.println("[POWER] Configured HP GPIO Wakeup on IO39 (Light Sleep Fallback ready).");
-#endif
-}
-
-void PowerManager::enterDeepSleep() {
-  Serial.println("[POWER] Shutting down peripherals. Entering low-power sleep...");
+  Serial.println("[POWER] Entering DEEP SLEEP (<15uA) via RTC IO10...");
   Serial.flush();
-
-#if USE_HARDWARE_MOD_RTC_PIN
-  Serial.println("[POWER] Entering DEEP SLEEP (<15uA) via RTC IO10. Waiting for SW1 press...");
   esp_sleep_enable_ext0_wakeup(PIN_BUTTON, 0);
   esp_deep_sleep_start();
 #else
-  Serial.println("[POWER] ⚠️ Chân IO39 không thuộc RTC: Chuyển sang LIGHT SLEEP an toàn...");
-  Serial.println("[POWER] (Khi bấm SW1 mạch sẽ thức dậy ngay lập tức mà không bị treo chết mạch!)");
-  Serial.println("[POWER] (Mẹo: Câu 1 sợi dây từ SW1 sang IO10 để kích hoạt Deep Sleep <15uA chuẩn)");
-  Serial.flush();
-
+  // Với mạch nguyên bản KiCad / PCB (IO39 thuộc HP domain):
+  // Dùng Light Sleep: tiêu thụ điện cực thấp (~300uA), đánh thức ngay lập tức trong <50us
+  // KHÔNG dùng ESP.restart() để giữ nguyên trạng thái bấm phím tức thì của người dùng!
   gpio_wakeup_enable(PIN_BUTTON, GPIO_INTR_LOW_LEVEL);
   esp_sleep_enable_gpio_wakeup();
+
   esp_light_sleep_start();
 
-  // Khi người dùng bấm nút SW1 (kéo IO39 xuống LOW), ESP32-S3 thức dậy tại đây
-  Serial.println("[POWER] >>> Thức dậy từ Light Sleep qua nút SW1 (IO39)! Khởi động lại chu trình...");
-  delay(50);
-  ESP.restart();
+  // Khi bấm nút SW1 (kéo IO39 xuống LOW), CPU tiếp tục thực thi ngay lập tức tại đây!
+  Serial.println("[POWER] >>> Woke up instantly from Light Sleep via SW1 (IO39)!");
 #endif
 }
 
