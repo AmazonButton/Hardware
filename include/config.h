@@ -67,6 +67,7 @@
 #define BLE_CHAR_INFO_UUID          "0000FFF1-0000-1000-8000-00805F9B34FB" // Read Device Info
 #define BLE_CHAR_WIFI_UUID          "0000FFF2-0000-1000-8000-00805F9B34FB" // Write SSID + Pass
 #define BLE_CHAR_STATUS_UUID        "0000FFF3-0000-1000-8000-00805F9B34FB" // Notify Status
+#define BLE_CHAR_LED_UUID           "0000FFF4-0000-1000-8000-00805F9B34FB" // Write LED Color / Mode
 
 // =========================================================================
 // DEFAULT CLOUD BACKEND URL (Được ghi đè từ NVS Flash)
