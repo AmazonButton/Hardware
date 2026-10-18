@@ -4,24 +4,80 @@
 #include <Arduino.h>
 
 // =========================================================================
-// HARDWARE PIN DEFINITIONS (ESP32-S3-WROOM-1)
+// HARDWARE VARIANT SELECTION (BẢN 1 NÚT vs BẢN 3 NÚT)
 // Khớp 100% Sơ đồ nguyên lý KiCad: Smart_Order_Button.kicad_sch & PCB Layout
 // =========================================================================
+#define HARDWARE_VARIANT_SINGLE_BUTTON  1 // Bản 1 nút: Đa cử chỉ (Single/Double/Hold trên SW1)
+#define HARDWARE_VARIANT_TRIPLE_BUTTON  3 // Bản 3 nút: Cấu hình tự do từng nút (Món hàng / Thanh toán / Dịch vụ)
 
-// Button SW1 (Net BTN_ORDER)
+// ⚡ LỰA CHỌN PHIÊN BẢN MẶC ĐỊNH CHO FIRMWARE:
+#ifndef CURRENT_HARDWARE_VARIANT
+#define CURRENT_HARDWARE_VARIANT        HARDWARE_VARIANT_TRIPLE_BUTTON
+#endif
+
+// =========================================================================
+// CONFIGURABLE BUTTON ACTIONS & MENU ITEM MAPPING (CẤU HÌNH TỪNG NÚT BẤM / MÓN HÀNG)
+// =========================================================================
+enum ButtonActionType {
+  ACTION_ORDER_DEFAULT = 0,    // Đặt món tổng quát (ORDER)
+  ACTION_ORDER_ITEM,           // Đặt 1 món hàng cụ thể (Ví dụ: Bia Heineken, Cà phê muối, Khăn lạnh...)
+  ACTION_REQUEST_BILL,         // Yêu cầu thanh toán / Tính tiền (BILL)
+  ACTION_CALL_STAFF,           // Gọi nhân viên phục vụ / Trợ giúp (CALL STAFF)
+  ACTION_CANCEL_ORDER,         // Hủy đơn hàng gần nhất (CANCEL)
+  ACTION_CUSTOM_EVENT          // Sự kiện tùy biến theo yêu cầu kinh doanh
+};
+
+struct ButtonConfig {
+  ButtonActionType actionType;
+  char itemId[24];             // Mã SKU/ID món hàng (VD: "ITEM_BEER_01", "ITEM_COFFEE_02")
+  char itemName[48];           // Tên món hàng hiển thị (VD: "Bia Heineken", "Cà phê muối")
+  uint8_t quantity;            // Số lượng đặt mặc định (1, 2...)
+  uint8_t ledColorIndex;       // Màu LED chỉ định phản hồi
+};
+
+// Cấu hình mặc định cho 3 nút bấm (SW1, SW2, SW3)
+#define DEFAULT_BTN1_ACTION_TYPE        ACTION_ORDER_ITEM
+#define DEFAULT_BTN1_ITEM_ID            "ITEM_BEER_01"
+#define DEFAULT_BTN1_ITEM_NAME          "Bia Heineken"
+#define DEFAULT_BTN1_QUANTITY           1
+
+#define DEFAULT_BTN2_ACTION_TYPE        ACTION_REQUEST_BILL
+#define DEFAULT_BTN2_ITEM_ID            "SVC_BILL_01"
+#define DEFAULT_BTN2_ITEM_NAME          "Yêu cầu Thanh toán"
+#define DEFAULT_BTN2_QUANTITY           1
+
+#define DEFAULT_BTN3_ACTION_TYPE        ACTION_CANCEL_ORDER
+#define DEFAULT_BTN3_ITEM_ID            "SVC_CANCEL_01"
+#define DEFAULT_BTN3_ITEM_NAME          "Hủy Đơn Hàng"
+#define DEFAULT_BTN3_QUANTITY           1
+
+// =========================================================================
+// HARDWARE PIN DEFINITIONS (ESP32-S3-WROOM-1)
+// =========================================================================
+
+// Button SW1 (Net BTN_ORDER / BTN_SW1)
 // ⚠️ ĐẶC TÍNH PHẦN CỨNG ESP32-S3 QUAN TRỌNG:
 // - Trên module ESP32-S3-WROOM-1, chân IO39 nằm ở Pin 32 (Net BTN_ORDER nối SW1 xuống GND).
 // - Do IO39 thuộc High-Performance (HP) Domain, không nằm trong RTC Domain (IO0-IO21),
 //   ESP32-S3 hỗ trợ đánh thức từ LIGHT SLEEP qua IO39 cực kỳ nhanh (<50us), không cần reboot!
 // - USE_HARDWARE_MOD_RTC_PIN = 0 (MẶC ĐỊNH): Chạy nguyên bản mạch KiCad/PCB qua IO39 (Light Sleep).
 // - USE_HARDWARE_MOD_RTC_PIN = 1: Đã câu dây phần cứng SW1 sang chân RTC IO10 (Pin 18) -> Cho phép Deep Sleep <15uA.
-#define USE_HARDWARE_MOD_RTC_PIN    0             // Đặt 1 nếu đã mod câu dây sang IO10
+#define USE_HARDWARE_MOD_RTC_PIN        0             // Đặt 1 nếu đã mod câu dây sang IO10
 
 #if USE_HARDWARE_MOD_RTC_PIN
-#define PIN_BUTTON                  GPIO_NUM_10   // IO10 (Pin 18) - RTC GPIO Wakeup Deep Sleep <15uA
+#define PIN_BUTTON_SW1                  GPIO_NUM_10   // IO10 (Pin 18) - RTC GPIO Wakeup Deep Sleep <15uA
 #else
-#define PIN_BUTTON                  GPIO_NUM_39   // IO39 (Pin 32) - Net BTN_ORDER KiCad/PCB gốc (Light Sleep)
+#define PIN_BUTTON_SW1                  GPIO_NUM_39   // IO39 (Pin 32) - Net BTN_ORDER KiCad/PCB gốc (Light Sleep)
 #endif
+
+// Button SW2 (Net BTN_SW2 - Chức năng Gọi thanh toán / Gọi nhân viên)
+#define PIN_BUTTON_SW2                  GPIO_NUM_40   // IO40 (Pin 33) - Active LOW
+
+// Button SW3 (Net BTN_SW3 - Chức năng Hủy đơn hàng / Trợ giúp SOS)
+#define PIN_BUTTON_SW3                  GPIO_NUM_41   // IO41 (Pin 34) - Active LOW
+
+// Tương thích ngược với mã nguồn cũ
+#define PIN_BUTTON                      PIN_BUTTON_SW1
 
 // Tối ưu hóa nguồn để LDO ME6211C33M5G (500mA) không bị sụt áp Brownout khi phát Wi-Fi
 #define ESP32_CPU_FREQ_MHZ          80            // 80MHz tiết kiệm điện năng và giảm xung dòng đỉnh

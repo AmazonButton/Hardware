@@ -1,0 +1,24 @@
+# Operating System
+.DS_Store
+Thumbs.db
+[Dd]esktop.ini
+
+# Harness runtime database
+harness.db
+harness.db-wal
+harness.db-shm
+*.db
+*.db-wal
+*.db-shm
+
+# Editor directories
+.vscode/
+.idea/
+*.swp
+*.bak
+*.tmp
+
+# Environment / Secrets
+.env
+.env.*
+!.env.example

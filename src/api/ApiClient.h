@@ -2,6 +2,7 @@
 #define API_CLIENT_H
 
 #include <Arduino.h>
+#include "config.h"
 
 struct OrderResult {
   bool success;
@@ -18,7 +19,8 @@ public:
       const String &deviceSecret,
       const String &eventType,
       uint8_t battery,
-      int rssi
+      int rssi,
+      const ButtonConfig* itemConfig = nullptr
   );
 };
 

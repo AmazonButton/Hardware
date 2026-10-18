@@ -11,6 +11,7 @@ public:
   static void beepSuccess();
   static void beepError();
   static void beepCancel();
+  static void beepBill();
 };
 
 #endif

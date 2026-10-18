@@ -1,0 +1,145 @@
+# Reusable Workflow: Harness Quality Gate
+# =============================================================================
+# Validates harness compliance: failure memory files, decision records,
+# conventional commits, and bug classification rules.
+#
+# Usage in a consuming workflow:
+#   jobs:
+#     harness-gate:
+#       uses: ./.github/workflows/reusable/harness-quality-gate.yml
+#       secrets: inherit
+# =============================================================================
+name: Harness Quality Gate (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      check-commits:
+        description: 'Whether to validate commit messages with commitlint'
+        type: boolean
+        default: true
+      harness-dir:
+        description: 'Path to harness-engineering directory'
+        type: string
+        default: 'harness-engineering'
+    secrets:
+      GITHUB_TOKEN:
+        required: false
+
+jobs:
+  harness-lint:
+    name: "🔍 Harness Quality Gate"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for commitlint
+
+      # ─── Failure Memory Files ───────────────────────────────────────────
+      - name: Validate failure memory files
+        run: |
+          HARNESS_DIR="${{ inputs.harness-dir }}"
+
+          # Check scripts/checks/check_failures.sh if it exists
+          if [ -f "scripts/checks/check_failures.sh" ]; then
+            chmod +x scripts/checks/check_failures.sh
+            bash scripts/checks/check_failures.sh
+            echo "✅ Failure memory check passed"
+          else
+            echo "⚠️  scripts/checks/check_failures.sh not found — skipping"
+          fi
+
+      # ─── Bug Classification Rules ────────────────────────────────────────
+      - name: Enforce bug classification rules
+        if: contains(join(github.event.pull_request.labels.*.name, ','), 'bug:')
+        run: |
+          LABELS="${{ join(github.event.pull_request.labels.*.name, ',') }}"
+          echo "PR labels: $LABELS"
+
+          if [[ "$LABELS" == *"bug:high_risk"* ]]; then
+            echo "::notice::High-risk bug detected — enforcing full guardrails"
+
+            # Require failure memory file in this PR
+            FAIL_COUNT=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -c "^docs/failures/FAIL-" || true)
+            if [ "$FAIL_COUNT" -eq 0 ]; then
+              echo "::error::high_risk bug PR requires a new failure memory file in docs/failures/"
+              echo "::error::Template: docs/failures/TEMPLATE.md"
+              exit 1
+            fi
+
+            # Verify Prevention section
+            for f in $(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep "^docs/failures/FAIL-"); do
+              if [ -f "$f" ]; then
+                if ! grep -q "## Prevention" "$f"; then
+                  echo "::error::$f missing '## Prevention' section"
+                  exit 1
+                fi
+                echo "✅ $f has Prevention section"
+              fi
+            done
+
+            echo "✅ High-risk guardrails passed"
+          elif [[ "$LABELS" == *"bug:normal"* ]]; then
+            echo "::notice::Normal bug — standard checks apply"
+          elif [[ "$LABELS" == *"bug:tiny"* ]]; then
+            echo "::notice::Tiny bug — minimal checks"
+          fi
+
+      # ─── Decision Records Format ─────────────────────────────────────────
+      - name: Validate decision records format
+        run: |
+          ERRORS=0
+          for f in docs/decisions/[0-9]*.md; do
+            [ -f "$f" ] || continue
+            if ! head -5 "$f" | grep -qi "decision\|title\|status\|#"; then
+              echo "::warning::$f may be missing a proper header"
+            fi
+          done
+          echo "✅ Decision records checked"
+
+      # ─── Conventional Commits ────────────────────────────────────────────
+      - name: Validate commit messages
+        if: ${{ inputs.check-commits }}
+        uses: wagoid/commitlint-github-action@v5
+        with:
+          configFile: ${{ inputs.harness-dir }}/commit-convention/commitlint.config.js
+          failOnWarnings: false
+          helpURL: https://www.conventionalcommits.org/
+
+      # ─── PR Size Check ───────────────────────────────────────────────────
+      - name: Check PR size
+        if: github.event_name == 'pull_request'
+        run: |
+          CHANGED_LINES=$(git diff --stat origin/${{ github.base_ref }}...HEAD | tail -1 | grep -oP '\d+ insertion' | grep -oP '\d+' || echo "0")
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | wc -l)
+
+          echo "Changed lines (approx): $CHANGED_LINES"
+          echo "Changed files: $CHANGED_FILES"
+
+          if [ "$CHANGED_FILES" -gt 40 ]; then
+            echo "::warning::PR touches $CHANGED_FILES files (threshold: 40). Consider splitting into smaller PRs."
+          fi
+
+          echo "✅ PR size check complete"
+
+      # ─── Legal Terms Check (source code) ────────────────────────────────
+      - name: Check for forbidden legal terms in source
+        run: |
+          FORBIDDEN_TERMS=("An toàn" "Hoàn toàn an toàn" "Chuyên gia" "Cố vấn y tế")
+          FOUND=0
+
+          for term in "${FORBIDDEN_TERMS[@]}"; do
+            if grep -r "$term" \
+              --include="*.ts" --include="*.tsx" \
+              --include="*.java" --include="*.html" \
+              --exclude-dir=node_modules \
+              --exclude-dir=.git \
+              . 2>/dev/null | grep -v "forbidden_terms\|FORBIDDEN\|legal-rules\|AGENTS.md\|harness-engineering" | head -5; then
+              echo "::warning::Found '$term' in source — verify this is appropriate context and not user-visible AI claim"
+              FOUND=1
+            fi
+          done
+
+          if [ "$FOUND" -eq 0 ]; then
+            echo "✅ No forbidden legal terms found in source"
+          fi

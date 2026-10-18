@@ -1,0 +1,137 @@
+# Project CI Template
+# =============================================================================
+# Template for consuming the HEF reusable workflows in a new project.
+# Copy this to: .github/workflows/ci.yml
+# Then customize the `with:` inputs for your project.
+# =============================================================================
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+    tags:
+      - 'v*.*.*'
+  pull_request:
+    branches: [main, develop]
+
+env:
+  NODE_VERSION: '22'
+  JAVA_VERSION: '21'
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # HARNESS QUALITY GATE (runs on all PRs)
+  # ──────────────────────────────────────────────────────────────────────────
+  harness-gate:
+    name: Harness Quality Gate
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/reusable/harness-quality-gate.yml
+    with:
+      check-commits: true
+      harness-dir: 'harness-engineering'
+    secrets: inherit
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # BACKEND CI
+  # ──────────────────────────────────────────────────────────────────────────
+  backend-ci:
+    name: Backend CI
+    # Only run if backend files changed
+    # paths: ['backend/**', 'docker-compose.yml']
+    uses: ./.github/workflows/reusable/backend-ci.yml
+    with:
+      java-version: '21'
+      working-directory: 'backend'
+      run-coverage: false   # Set to true on scheduled runs
+      run-owasp: false      # Set to true weekly
+    secrets: inherit
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # ADMIN WEB CI
+  # ──────────────────────────────────────────────────────────────────────────
+  admin-ci:
+    name: Admin Web CI
+    uses: ./.github/workflows/reusable/frontend-ci.yml
+    with:
+      node-version: '22'
+      working-directory: 'admin-web'
+      run-build: true
+      run-tests: true
+      eslint-max-warnings: 60
+    secrets: inherit
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # MOBILE CI
+  # ──────────────────────────────────────────────────────────────────────────
+  mobile-ci:
+    name: Mobile CI
+    uses: ./.github/workflows/reusable/mobile-ci.yml
+    with:
+      node-version: '22'
+      working-directory: 'mobile'
+    secrets: inherit
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # SECURITY SCAN (on PRs + weekly)
+  # ──────────────────────────────────────────────────────────────────────────
+  security-scan:
+    name: Security Scan
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/reusable/security-scan.yml
+    with:
+      scan-npm: true
+      scan-dirs: '["mobile", "admin-web"]'
+      fail-on-critical: true
+    secrets: inherit
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # DEPLOY BACKEND (main branch push only)
+  # ──────────────────────────────────────────────────────────────────────────
+  deploy-backend:
+    name: Deploy Backend
+    needs: [backend-ci]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download JAR artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-jar
+          path: backend/target/
+
+      - name: Package deploy bundle
+        run: tar -czvf backend-prod.tar.gz Dockerfile.prod target/*.jar
+        working-directory: backend
+
+      - name: Configure SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.AWS_EC2_SSH_KEY }}" > ~/.ssh/deploy-key.pem
+          chmod 600 ~/.ssh/deploy-key.pem
+
+      - name: Upload + deploy to server
+        run: |
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/deploy-key.pem \
+            backend/backend-prod.tar.gz \
+            "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:~/"
+
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy-key.pem \
+            "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}" '
+              mkdir -p backend &&
+              tar -xzvf backend-prod.tar.gz -C backend &&
+              cd backend && mv Dockerfile.prod Dockerfile && cd .. &&
+              sudo docker compose build backend &&
+              sudo docker compose up -d backend
+            '
+
+      - name: Clean up SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy-key.pem
+
+      - name: Health check
+        run: |
+          sleep 15
+          curl --fail ${{ secrets.BACKEND_HEALTH_URL || 'https://api.example.com/actuator/health' }}
+          echo "✅ Health check passed"

@@ -1,0 +1,198 @@
+# harness.config.yaml
+# =============================================================================
+# Harness Engineering Framework — Project Configuration
+#
+# Copy this file to your project's harness-engineering/ directory and customize.
+# All values here override framework defaults.
+# =============================================================================
+
+project:
+  name: "dico-barcode"                  # Human-readable project name
+  id: "dico-scan"                       # Machine-readable identifier (slug)
+  description: "DICO Scan — Barcode scanner health/wellness product"
+  type: "mobile-fullstack"              # mobile-only | web-only | mobile-fullstack | api-only | cli
+
+# ─────────────────────────────────────────────────────
+# Surfaces: which engineering surfaces exist in this project
+# ─────────────────────────────────────────────────────
+surfaces:
+  backend:
+    enabled: true
+    location: "dico-scan-backend/"
+    stack: "java-spring-boot"
+    test_command: "./mvnw test"
+    build_command: "./mvnw package -DskipTests -q"
+
+  frontend_admin:
+    enabled: true
+    location: "dico-scan-admin-web/"
+    stack: "react-vite-typescript"
+    test_command: "npm run test -- --run"
+    build_command: "npm run build"
+
+  mobile:
+    enabled: true
+    location: "dico-scan-mobile/"
+    stack: "expo-react-native"
+    validate_command: "npm run validate"
+    build_debug_command: ".\\infrastructure\\scripts\\bluestacks_debug.ps1"
+
+# ─────────────────────────────────────────────────────
+# Multi-Role Review: which roles are active for this project
+# ─────────────────────────────────────────────────────
+roles:
+  orchestrator: true
+  frontend_engineer: true      # Active — admin web + mobile UI
+  backend_engineer: true       # Active — Spring Boot API
+  devops_engineer: true        # Active — Docker, AWS, CI/CD
+  security_auditor: true       # Active — JWT, health data, Play policy
+  qa_engineer: true            # Active — unit + integration + E2E
+  devil_advocate: true         # Active — adversarial pass always runs
+
+# ─────────────────────────────────────────────────────
+# Risk lanes and approval gates
+# ─────────────────────────────────────────────────────
+lanes:
+  tiny:
+    role_review_required: false     # Simple edits skip role cycle
+    ci_gates: ["tests-pass"]
+  normal:
+    role_review_required: true      # Full role cycle required
+    ci_gates: ["tests-pass", "lint-pass", "type-check-pass"]
+    min_roles_passing: 4            # At least 4 of 7 roles must PASS
+  high_risk:
+    role_review_required: true
+    ci_gates: ["tests-pass", "lint-pass", "type-check-pass", "security-scan-pass"]
+    min_roles_passing: 6            # 6 of 7 roles must PASS
+    requires_failure_memory: true   # Failure memory file mandatory
+    requires_human_confirmation: true
+
+# ─────────────────────────────────────────────────────
+# Quality Gates thresholds
+# ─────────────────────────────────────────────────────
+quality_gates:
+  frontend:
+    eslint_max_warnings: 60
+    typescript_errors: 0
+    bundle_size_gzip_kb: 500        # Warning at 500KB
+    lighthouse_performance_min: 75  # Warning if below
+
+  backend:
+    test_coverage_min_pct: 60       # Warning if below
+    dependency_critical_vulns: 0    # Blocks merge
+    dependency_high_vulns: 0        # Warning
+
+  mobile:
+    apk_size_mb_warning: 75         # Warning if above
+    required_abis: ["arm64-v8a", "x86_64"]
+    min_sdk_version: 24
+    target_sdk_version: 36
+    page_size_alignment_kb: 16
+
+  general:
+    pr_max_lines_changed: 400       # Warning (not hard block) per PR
+    pr_max_files_changed: 40
+
+# ─────────────────────────────────────────────────────
+# Branch strategy
+# ─────────────────────────────────────────────────────
+branching:
+  strategy: "trunk-based"           # trunk-based | gitflow | github-flow
+  main_branch: "main"
+  protected_branches: ["main"]
+  short_lived_branches: true
+  max_branch_age_days: 5            # Warning if branch older than 5 days
+  naming_convention: "{type}/US-{id}-{short-description}"
+  allowed_types: ["feat", "fix", "chore", "docs", "refactor", "test", "perf"]
+
+# ─────────────────────────────────────────────────────
+# Commit convention
+# ─────────────────────────────────────────────────────
+commits:
+  standard: "conventional-commits"  # conventional-commits | custom
+  enforce: "ci"                     # ci | husky | both
+  scopes:                           # Valid commit scopes for this project
+    - "backend"
+    - "mobile"
+    - "admin"
+    - "infra"
+    - "harness"
+    - "docs"
+    - "deps"
+    - "security"
+    - "legal"
+
+# ─────────────────────────────────────────────────────
+# Legal & Compliance (project-specific)
+# ─────────────────────────────────────────────────────
+compliance:
+  legal_rules_enabled: true
+  forbidden_terms:                  # AI output must never use these
+    - "An toàn"
+    - "Hoàn toàn an toàn"
+    - "Nguy hiểm"
+    - "Chuyên gia"
+    - "Bác sĩ"
+    - "Cố vấn y tế"
+  e2e_legal_assertion: true        # Maestro must assert no forbidden terms
+
+# ─────────────────────────────────────────────────────
+# DORA Metrics tracking
+# ─────────────────────────────────────────────────────
+dora:
+  track: true
+  targets:
+    deployment_frequency: "weekly"  # daily | weekly | monthly | quarterly
+    lead_time_hours: 72             # Target lead time commit → production
+    change_failure_rate_pct: 15     # Target: < 15%
+    mttr_hours: 24                  # Target MTTR: < 24h
+
+# ─────────────────────────────────────────────────────
+# Harness CLI location
+# ─────────────────────────────────────────────────────
+cli:
+  binary_unix: "./scripts/bin/harness-cli"
+  binary_windows: ".\\scripts\\bin\\harness-cli.exe"
+  db_path: "./harness.db"
+
+# ─────────────────────────────────────────────────────
+# Available Golden Path Archetypes
+# ─────────────────────────────────────────────────────
+archetypes:
+  available:
+    - id: "mobile-fullstack"
+      path: "golden-paths/archetypes/mobile-fullstack.md"
+    - id: "web-fullstack"
+      path: "golden-paths/archetypes/web-fullstack.md"
+    - id: "mobile-only"
+      path: "golden-paths/archetypes/mobile-only.md"
+    - id: "api-backend"
+      path: "golden-paths/archetypes/api-backend.md"
+
+# ─────────────────────────────────────────────────────
+# Portable Agent Skills
+# ─────────────────────────────────────────────────────
+skills:
+  directory: "skills/"
+  library:
+    - name: "android-debug"
+      path: "skills/android-debug/SKILL.md"
+    - name: "frontend-ui-design"
+      path: "skills/frontend-ui-design/SKILL.md"
+    - name: "data-table-patterns"
+      path: "skills/data-table-patterns/SKILL.md"
+    - name: "release-checklist"
+      path: "skills/release-checklist/SKILL.md"
+
+# ─────────────────────────────────────────────────────
+# Context Engineering & MCP
+# ─────────────────────────────────────────────────────
+context_engineering:
+  token_budget_max: 16000
+  file_slice_limit_lines: 800
+  impact_map_required: true
+
+mcp:
+  config_path: "mcp/mcp.config.json"
+  servers: ["postgres", "filesystem", "github", "puppeteer", "maestro"]
+

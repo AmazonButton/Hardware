@@ -122,14 +122,35 @@ flowchart TD
 
 ### 3.3. Khối Giao Diện Người Dùng & Ngoại Vi (HMI)
 
-#### A. Mạch Nút Bấm Đa Năng SW1 (`BTN_ORDER`)
-- Nút bấm cơ học kết nối một cực vào `IO39` (Pin 32) và cực còn lại nối `GND`.
-- Cấu hình firmware: `pinMode(PIN_BUTTON, INPUT_PULLUP)`. Khi nút mở, mức logic là HIGH (3.3V). Khi nhấn nút, chân IO39 bị kéo thẳng xuống 0V (**Active LOW**).
-- **Phân tích miền nguồn & Chế độ tiết kiệm năng lượng**:
-  - Trên ESP32-S3, chân `IO39` thuộc **HP (High-Performance) Domain**, không nằm trong **RTC Domain** (`IO0` đến `IO21`).
-  - Do đó, chức năng `esp_sleep_enable_ext0_wakeup` (chỉ dùng cho chân RTC) không thể áp dụng cho IO39.
-  - **Cơ chế hoạt động nguyên bản (Mặc định)**: Sử dụng **Light Sleep** kết hợp `gpio_wakeup_enable(GPIO_NUM_39, GPIO_INTR_LOW_LEVEL)`. Tiêu thụ dòng tĩnh $\approx 300\mu\text{A} - 800\mu\text{A}$, ưu điểm vượt trội là **thời gian thức dậy siêu tốc ($<50\mu\text{s}$)**, duy trì nguyên vẹn RAM và không bị trễ khởi động.
-  - **Tùy chọn Mod phần cứng (Deep Sleep)**: Bằng cách nối một bodge wire từ chân SW1 sang chân RTC còn trống như `IO10` (Pin 18), hệ thống có thể chuyển sang chế độ **Deep Sleep toàn phần**, đưa dòng rò nghỉ xuống mức kỷ lục $< 15\mu\text{A}$.
+#### A. Kiến Trúc Mạch Nút Bấm: Bản 1 Nút (Single Button) & Bản 3 Nút (Triple Button)
+
+Bo mạch hỗ trợ linh hoạt 2 phiên bản phần cứng theo sơ đồ nguyên lý KiCad và layout PCB:
+
+1. **Bản 1 Nút (Single Button)**:
+   - Sử dụng duy nhất nút **SW1** nối vào `IO39` (Pin 32) và cực còn lại nối `GND`.
+   - Cấu hình firmware: `pinMode(PIN_BUTTON_SW1, INPUT_PULLUP)`. Khi nút mở, mức logic là HIGH (3.3V). Khi nhấn nút, chân IO39 bị kéo thẳng xuống 0V (**Active LOW**).
+   - Xử lý cử chỉ đa tầng: Nhấn 1 lần (Tạo đơn hàng), Nhấn đúp (Hủy đơn hàng), Giữ 5s (Đồng bộ cấu hình), Giữ 10s (Cấu hình BLE Wi-Fi), Giữ 15s (Khôi phục cài đặt gốc).
+
+2. **Bản 3 Nút (Triple Button - Khớp 100% PCB Layout Rev 4.5)**:
+   - **Nút SW1 (`BTN_SW1` - IO39, Pin 32)**: Chức năng **Đặt hàng tức thì (ORDER)**.
+   - **Nút SW2 (`BTN_SW2` - IO40, Pin 33)**: Chức năng **Gọi thanh toán / Phục vụ (BILL / CALL STAFF)**.
+   - **Nút SW3 (`BTN_SW3` - IO41, Pin 34)**: Chức năng **Hủy đơn hàng / Trợ giúp SOS (CANCEL / HELP)**.
+   - Cả 3 chân GPIO 39, 40, 41 đều cấu hình `INPUT_PULLUP` nội bộ của ESP32-S3, kích hoạt mức LOW khi nhấn.
+   - *Ưu thế kỹ thuật*: Loại bỏ hoàn toàn độ trễ chờ đợi nhận diện nhấn đúp (Multi-click window 450ms). Khi người dùng nhấn SW1, hệ thống phản hồi tức thì trong micro-giây!
+   - Thao tác tổ hợp: Nhấn giữ đồng thời SW1 + SW3 trong 5 giây để kích hoạt khôi phục cài đặt gốc (Factory Reset NVS), hoặc nhấn giữ SW2 5 giây để phát quảng bá BLE Wi-Fi SoftAP.
+
+3. **Phân tích miền nguồn & Cơ chế đánh thức tiết kiệm năng lượng**:
+   - Chân `IO39`, `IO40`, `IO41` thuộc **HP (High-Performance) Domain** của ESP32-S3.
+   - **Cơ chế hoạt động nguyên bản (Mặc định)**: Sử dụng **Light Sleep** kết hợp:
+     ```cpp
+     gpio_wakeup_enable(GPIO_NUM_39, GPIO_INTR_LOW_LEVEL);
+     gpio_wakeup_enable(GPIO_NUM_40, GPIO_INTR_LOW_LEVEL);
+     gpio_wakeup_enable(GPIO_NUM_41, GPIO_INTR_LOW_LEVEL);
+     esp_sleep_enable_gpio_wakeup();
+     esp_light_sleep_start();
+     ```
+   - Dòng tĩnh đạt $\approx 350\mu\text{A} - 450\mu\text{A}$, ưu điểm vượt trội là **thời gian thức dậy siêu tốc ($<50\mu\text{s}$)**, duy trì nguyên vẹn RAM và không bị trễ khởi động bootloader.
+   - **Tùy chọn Mod phần cứng (Deep Sleep)**: Bằng cách câu dây SW1 sang chân RTC IO10 (Pin 18), hệ thống có thể chuyển sang chế độ **Deep Sleep toàn phần**, đưa dòng rò nghỉ xuống mức kỷ lục $< 15\mu\text{A}$.
 
 #### B. Mạch Đèn LED Chỉ Báo Trạng Thái RGB D1
 - **Cấu hình phần cứng**: LED RGB 4 chân loại **Common Anode (Cực Dương Chung)** nối vào rail nguồn $+3.3\text{V}$.

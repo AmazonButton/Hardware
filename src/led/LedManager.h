@@ -11,6 +11,7 @@ enum LedColor {
   LED_GREEN,
   LED_RED,
   LED_PURPLE,
+  LED_CYAN,
   LED_WHITE
 };
 

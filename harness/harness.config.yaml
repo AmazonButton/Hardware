@@ -1,0 +1,132 @@
+# harness.config.yaml
+# =============================================================================
+# Harness Engineering Framework — Project Configuration
+# Smart Order Button (ESP32-S3 IoT Hardware & Embedded Firmware)
+# =============================================================================
+
+project:
+  name: "Smart Order Button ESP32-S3 IoT"
+  id: "smart-order-button"
+  domain: "iot-hardware"
+  description: "Ultra-low-power ESP32-S3 IoT Button with Dual Hardware Variants (1-Button & 3-Button), BLE Provisioning, MQTT, KiCad PCB, and React Test Bench"
+  type: "iot-embedded-fullstack"
+
+# ─────────────────────────────────────────────────────
+# Engineering Surfaces
+# ─────────────────────────────────────────────────────
+surfaces:
+  firmware:
+    enabled: true
+    location: "hardware/src/"
+    include_location: "hardware/include/"
+    sketch_location: "hardware/SmartOrderButton/"
+    stack: "esp32s3-cpp-arduino-freertos"
+    variants:
+      - "single_button"  # IO39: Short (Order), Double (Bill), Long (Cancel)
+      - "triple_button"  # IO39 (Order), IO40 (Bill), IO41 (Cancel)
+    build_target: "esp32-s3-wroom-1"
+
+  hardware:
+    enabled: true
+    location: "hardware/"
+    schematic: "Smart_Order_Button.kicad_sch"
+    pcb: "Smart_Order_Button.kicad_pcb"
+    stack: "kicad-8.x"
+    mcu: "ESP32-S3-WROOM-1-N16R8"
+    power: "TP4065 LiPo Charger + ME6211 LDO + Light/Deep Sleep IO Wakeup"
+
+  test_bench:
+    enabled: true
+    location: "hardware/test_bench/"
+    stack: "react18-web-audio-node"
+    test_command: "node hardware/test_bench/run_test.js"
+    interactive_ui: "hardware/test_bench/index.html"
+
+# ─────────────────────────────────────────────────────
+# Multi-Role Governance (Embedded & IoT Profiles)
+# ─────────────────────────────────────────────────────
+roles:
+  orchestrator: true
+  embedded_firmware_engineer: true
+  hardware_pcb_engineer: true
+  qa_engineer: true
+  security_auditor: true
+  devil_advocate: true
+
+# ─────────────────────────────────────────────────────
+# Risk Lanes and Decision Gates
+# ─────────────────────────────────────────────────────
+lanes:
+  tiny:
+    role_review_required: false
+    ci_gates: ["tests-pass"]
+  normal:
+    role_review_required: true
+    ci_gates: ["tests-pass", "pin-check-pass", "header-guard-pass"]
+    min_roles_passing: 3
+    test_command: "node hardware/test_bench/run_test.js"
+  high_risk:
+    role_review_required: true
+    ci_gates: ["tests-pass", "drc-clean", "power-budget-verified", "security-audit"]
+    min_roles_passing: 5
+    requires_failure_memory: true
+    requires_human_confirmation: true
+
+# ─────────────────────────────────────────────────────
+# Quality Gates Thresholds
+# ─────────────────────────────────────────────────────
+quality_gates:
+  firmware:
+    header_guards_required: true
+    undefined_gpio_macros: 0
+    multitasking_sleep_yield: true
+    max_active_current_ma: 95
+    max_light_sleep_current_ma: 2.5
+    max_deep_sleep_current_ua: 15
+
+  hardware:
+    drc_unconnected_nets: 0
+    erc_pin_conflicts: 0
+    thermal_relief_vias_power_path: true
+    esd_protection_user_buttons: true
+
+  test_bench:
+    min_passing_scenarios: 14
+    max_tolerated_failures: 0
+
+  general:
+    pr_max_lines_changed: 500
+    pr_max_files_changed: 25
+
+# ─────────────────────────────────────────────────────
+# Branch Strategy & Commit Conventions
+# ─────────────────────────────────────────────────────
+branching:
+  strategy: "trunk-based"
+  main_branch: "main"
+  allowed_types: ["feat", "fix", "chore", "docs", "refactor", "test", "hardware", "firmware"]
+
+commits:
+  standard: "conventional-commits"
+  scopes:
+    - "firmware"
+    - "hardware"
+    - "test_bench"
+    - "ble"
+    - "power"
+    - "led"
+    - "buzzer"
+    - "harness"
+    - "docs"
+
+# ─────────────────────────────────────────────────────
+# Harness Reference CLI & Persistent Database
+# ─────────────────────────────────────────────────────
+cli:
+  script: "harness/scripts/harness_cli.py"
+  db_path: "harness/harness.db"
+
+context_engineering:
+  token_budget_max: 16000
+  file_slice_limit_lines: 800
+  impact_map_required: true
