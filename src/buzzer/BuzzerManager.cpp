@@ -38,3 +38,10 @@ void BuzzerManager::beepCancel() {
   // 1 tiếng bíp trầm dài (Cancel Tone: 1.8kHz 320ms)
   playTone(1800, 320);
 }
+
+void BuzzerManager::beepBill() {
+  // 2 tiếng bíp nhẹ nhàng thanh thoát (2.4kHz -> 2.8kHz) cho chức năng Gọi nhân viên / Thanh toán
+  playTone(2400, 70);
+  delay(50);
+  playTone(2800, 80);
+}

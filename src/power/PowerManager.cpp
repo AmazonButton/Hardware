@@ -1,6 +1,7 @@
 #include "PowerManager.h"
 #include <WiFi.h>
 #include <esp_wifi.h>
+#include "../button/ButtonManager.h"
 
 static MAX17048 s_gauge;
 
@@ -8,8 +9,10 @@ void PowerManager::init() {
   // Hạ tần số CPU xuống 80MHz để tránh sốc dòng trên IC hạ áp LDO ME6211 (500mA)
   setCpuFrequencyMhz(ESP32_CPU_FREQ_MHZ);
 
-  // Khởi tạo chân nút bấm SW1 có điện trở kéo lên nội bộ
-  pinMode(PIN_BUTTON, INPUT_PULLUP);
+  // Khởi tạo các chân nút bấm có điện trở kéo lên nội bộ
+  pinMode(PIN_BUTTON_SW1, INPUT_PULLUP);
+  pinMode(PIN_BUTTON_SW2, INPUT_PULLUP);
+  pinMode(PIN_BUTTON_SW3, INPUT_PULLUP);
 
   // Initialize MAX17048 I2C Fuel Gauge on IO4 (SDA) and IO5 (SCL)
   bool gaugeOk = s_gauge.begin(PIN_I2C_SDA, PIN_I2C_SCL);
@@ -25,26 +28,29 @@ void PowerManager::enterSleep() {
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
   esp_wifi_stop();
-  Serial.println("[POWER] Wi-Fi stopped. Entering ultra low power sleep, waiting for SW1...");
+  Serial.println("[POWER] Wi-Fi stopped. Entering ultra low power sleep, waiting for button events...");
   Serial.flush();
 
 #if USE_HARDWARE_MOD_RTC_PIN
   // Với mạch đã câu dây SW1 sang IO10 (RTC GPIO): hỗ trợ Deep Sleep ext0 chuẩn <15uA
   Serial.println("[POWER] Entering DEEP SLEEP (<15uA) via RTC IO10...");
   Serial.flush();
-  esp_sleep_enable_ext0_wakeup(PIN_BUTTON, 0);
+  esp_sleep_enable_ext0_wakeup(PIN_BUTTON_SW1, 0);
   esp_deep_sleep_start();
 #else
   // Với mạch nguyên bản KiCad / PCB (IO39 thuộc HP domain):
   // Dùng Light Sleep: tiêu thụ điện cực thấp (~300uA), đánh thức ngay lập tức trong <50us
-  // KHÔNG dùng ESP.restart() để giữ nguyên trạng thái bấm phím tức thì của người dùng!
-  gpio_wakeup_enable(PIN_BUTTON, GPIO_INTR_LOW_LEVEL);
+  gpio_wakeup_enable(PIN_BUTTON_SW1, GPIO_INTR_LOW_LEVEL);
+  if (ButtonManager::getVariant() == HARDWARE_VARIANT_TRIPLE_BUTTON) {
+    gpio_wakeup_enable(PIN_BUTTON_SW2, GPIO_INTR_LOW_LEVEL);
+    gpio_wakeup_enable(PIN_BUTTON_SW3, GPIO_INTR_LOW_LEVEL);
+  }
   esp_sleep_enable_gpio_wakeup();
 
   esp_light_sleep_start();
 
-  // Khi bấm nút SW1 (kéo IO39 xuống LOW), CPU tiếp tục thực thi ngay lập tức tại đây!
-  Serial.println("[POWER] >>> Woke up instantly from Light Sleep via SW1 (IO39)!");
+  // Khi bấm bất kỳ nút nào (SW1, SW2, SW3 kéo chân xuống LOW), CPU tiếp tục thực thi ngay lập tức tại đây!
+  Serial.println("[POWER] >>> Woke up instantly from Light Sleep via Button press!");
 #endif
 }
 

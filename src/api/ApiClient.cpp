@@ -10,7 +10,8 @@ OrderResult ApiClient::sendButtonEvent(
     const String &deviceSecret,
     const String &eventType,
     uint8_t battery,
-    int rssi
+    int rssi,
+    const ButtonConfig* itemConfig
 ) {
   OrderResult res;
   res.success = false;
@@ -34,6 +35,14 @@ OrderResult ApiClient::sendButtonEvent(
   doc["requestId"] = requestId;
   doc["battery"] = battery;
   doc["rssi"] = rssi;
+
+  if (itemConfig != nullptr) {
+    if (itemConfig->actionType == ACTION_ORDER_ITEM || strlen(itemConfig->itemId) > 0) {
+      doc["itemId"] = itemConfig->itemId;
+      doc["itemName"] = itemConfig->itemName;
+      doc["quantity"] = itemConfig->quantity;
+    }
+  }
 
   String bodyString;
   serializeJson(doc, bodyString);

@@ -1,0 +1,108 @@
+# Reusable Workflow: Mobile CI (Expo / React Native)
+# =============================================================================
+# Runs React Native / Expo CI: validate (typecheck + lint + jest)
+#
+# Usage:
+#   jobs:
+#     mobile:
+#       uses: ./.github/workflows/reusable/mobile-ci.yml
+#       with:
+#         node-version: '22'
+#         working-directory: 'mobile'
+#       secrets: inherit
+# =============================================================================
+name: Mobile CI (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: 'Node.js version'
+        type: string
+        default: '22'
+      working-directory:
+        description: 'Mobile project directory'
+        type: string
+        default: 'mobile'
+      eslint-max-warnings:
+        description: 'Maximum ESLint warnings allowed'
+        type: number
+        default: 60
+
+jobs:
+  mobile-ci:
+    name: "📱 Mobile CI (React Native / Expo)"
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ inputs.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: 'npm'
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ${{ inputs.working-directory }}
+
+      - name: TypeScript type check
+        run: npx tsc --noEmit
+        working-directory: ${{ inputs.working-directory }}
+
+      - name: ESLint check
+        run: npx eslint src --ext .ts,.tsx --max-warnings ${{ inputs.eslint-max-warnings }}
+        working-directory: ${{ inputs.working-directory }}
+
+      - name: Run Jest unit tests
+        run: npm run test
+        working-directory: ${{ inputs.working-directory }}
+
+      # Android Manifest checks (SDK versions, ABI, 64-bit)
+      - name: Validate Android Manifest (SDK versions)
+        run: |
+          MANIFEST="${{ inputs.working-directory }}/android/app/src/main/AndroidManifest.xml"
+          if [ -f "$MANIFEST" ]; then
+            echo "✅ AndroidManifest.xml found"
+          else
+            echo "::notice::AndroidManifest.xml not found (expected after expo prebuild)"
+          fi
+
+          BUILD_GRADLE="${{ inputs.working-directory }}/android/app/build.gradle"
+          if [ -f "$BUILD_GRADLE" ]; then
+            MIN_SDK=$(grep -oP 'minSdkVersion\s+\K\d+' "$BUILD_GRADLE" || echo "not found")
+            TARGET_SDK=$(grep -oP 'targetSdkVersion\s+\K\d+' "$BUILD_GRADLE" || echo "not found")
+            echo "minSdkVersion: $MIN_SDK"
+            echo "targetSdkVersion: $TARGET_SDK"
+
+            if [ "$MIN_SDK" != "not found" ] && [ "$MIN_SDK" -lt 24 ]; then
+              echo "::error::minSdkVersion $MIN_SDK is below required minimum of 24"
+              exit 1
+            fi
+            echo "✅ SDK version check passed"
+          else
+            echo "::notice::android/app/build.gradle not found (expected after expo prebuild)"
+          fi
+
+      # Check for forbidden legal terms in mobile source
+      - name: Check for forbidden legal terms (mobile source)
+        run: |
+          FORBIDDEN_TERMS=("An toàn" "Hoàn toàn an toàn" "Chuyên gia" "Cố vấn y tế" "Bác sĩ")
+          FOUND=0
+          for term in "${FORBIDDEN_TERMS[@]}"; do
+            MATCHES=$(grep -r "$term" \
+              --include="*.ts" --include="*.tsx" \
+              --exclude-dir=node_modules \
+              "${{ inputs.working-directory }}/src" 2>/dev/null | \
+              grep -v "// eslint-disable\|forbidden\|FORBIDDEN" | head -3)
+            if [ -n "$MATCHES" ]; then
+              echo "::warning::Found '$term' in mobile source:"
+              echo "$MATCHES"
+              FOUND=1
+            fi
+          done
+          if [ "$FOUND" -eq 0 ]; then
+            echo "✅ No forbidden legal terms in mobile source"
+          fi

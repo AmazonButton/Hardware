@@ -49,32 +49,74 @@
 #include <time.h>
 
 // =========================================================================================
-// 🔘 ĐỊNH NGHĨA CỬ CHỈ NÚT BẤM CƠ HỌC (MULTI-GESTURE ENUM)
+// 🔘 ĐỊNH NGHĨA PHIÊN BẢN PHẦN CỨNG & CỬ CHỈ NÚT BẤM (HARDWARE VARIANTS)
 // =========================================================================================
+#define HARDWARE_VARIANT_SINGLE_BUTTON  1 // Bản 1 nút: Đa cử chỉ (Single/Double/Hold trên SW1)
+#define HARDWARE_VARIANT_TRIPLE_BUTTON  3 // Bản 3 nút: SW1 (Order), SW2 (Bill), SW3 (Cancel)
+
+// ⚡ LỰA CHỌN PHIÊN BẢN PHẦN CỨNG:
+#ifndef CURRENT_HARDWARE_VARIANT
+#define CURRENT_HARDWARE_VARIANT        HARDWARE_VARIANT_TRIPLE_BUTTON
+#endif
+
 enum GestureType {
   GESTURE_NONE,
+  // === Bản 1 nút (Single-Button trên SW1) ===
   GESTURE_SINGLE_CLICK,
   GESTURE_DOUBLE_CLICK,
   GESTURE_FIVE_CLICKS_PAIR,
   GESTURE_HOLD_5S_ACTIVATE,
   GESTURE_HOLD_10S_PROVISION,
-  GESTURE_HOLD_15S_FACTORY_RESET
+  GESTURE_HOLD_15S_FACTORY_RESET,
+  // === Bản 3 nút (Triple-Button: SW1, SW2, SW3) ===
+  GESTURE_BTN1_ORDER,
+  GESTURE_BTN2_BILL,
+  GESTURE_BTN3_CANCEL,
+  GESTURE_BTN2_HOLD_CONFIG,
+  GESTURE_ALL_HOLD_RESET
+};
+
+// =========================================================================================
+// 🎯 CẤU HÌNH TỰ DO CHO 3 NÚT BẤM (MÓN HÀNG / THANH TOÁN / PHỤC VỤ)
+// =========================================================================================
+enum ButtonActionType {
+  ACTION_ORDER_DEFAULT = 0,    // Đặt món mặc định
+  ACTION_ORDER_ITEM,           // Đặt 1 món hàng cụ thể (Bia, Cà phê, Nước...)
+  ACTION_REQUEST_BILL,         // Yêu cầu thanh toán
+  ACTION_CALL_STAFF,           // Gọi phục vụ
+  ACTION_CANCEL_ORDER,         // Hủy đơn
+  ACTION_CUSTOM_EVENT          // Tùy biến khác
+};
+
+struct ButtonConfig {
+  ButtonActionType actionType;
+  char itemId[24];
+  char itemName[48];
+  uint8_t quantity;
+  uint8_t ledColorIndex;
+};
+
+static ButtonConfig s_buttonConfigs[3] = {
+  { ACTION_ORDER_ITEM, "ITEM_BEER_01", "Bia Heineken", 1, 0 },
+  { ACTION_REQUEST_BILL, "SVC_BILL_01", "Yêu cầu Thanh toán", 1, 1 },
+  { ACTION_CANCEL_ORDER, "SVC_CANCEL_01", "Hủy Đơn Hàng", 1, 2 }
 };
 
 // =========================================================================================
 // ⚙️ 1. ĐỊNH NGHĨA CHÂN PHẦN CỨNG & CẤU HÌNH ỔN ĐỊNH ESP32-S3
 // =========================================================================================
-// ⚠️ QUAN TRỌNG VỀ PHẦN CỨNG ESP32-S3:
-// IO39 thuộc HP Domain (không thuộc RTC IO 0-21) nên không thể dùng ext0 wakeup deep sleep.
-// - Đặt USE_HARDWARE_MOD_RTC_PIN = 0: Dùng chân IO39 KiCad gốc (Tự động vào Light Sleep, bấm SW1 thức dậy ngay <50us).
-// - Đặt USE_HARDWARE_MOD_RTC_PIN = 1: Đã câu dây phần cứng SW1 sang IO10 -> Cho phép Deep Sleep <15uA.
 #define USE_HARDWARE_MOD_RTC_PIN  0    // Đổi thành 1 khi đã câu dây SW1 sang IO10 (Pin 18 U1)
 
 #if USE_HARDWARE_MOD_RTC_PIN
-#define PIN_BTN_ORDER        10   // IO10 (Pin 18) - RTC GPIO Wakeup chuẩn <15uA
+#define PIN_BTN_SW1          10   // IO10 (Pin 18) - RTC GPIO Wakeup chuẩn <15uA
 #else
-#define PIN_BTN_ORDER        39   // IO39 (Pin 32) - Net BTN_ORDER KiCad gốc
+#define PIN_BTN_SW1          39   // IO39 (Pin 32) - Net BTN_SW1 / BTN_ORDER KiCad gốc
 #endif
+
+#define PIN_BTN_SW2          40   // IO40 (Pin 33) - Net BTN_SW2 (Yêu cầu thanh toán / Gọi nhân viên)
+#define PIN_BTN_SW3          41   // IO41 (Pin 34) - Net BTN_SW3 (Hủy đơn hàng / Trợ giúp)
+
+#define PIN_BTN_ORDER        PIN_BTN_SW1 // Tương thích ngược
 
 #define PIN_LED_R            7    // IO7  - LED Đỏ qua R15 1k (Active LOW)
 #define PIN_LED_G            6    // IO6  - LED Xanh lá qua R16 470R (Active LOW)
@@ -350,6 +392,13 @@ void buzzerCancel() {
   buzzerPlayTone(1800, 320);
 }
 
+void buzzerBill() {
+  // 2 tiếng bíp nhẹ nhàng (2.4kHz -> 2.8kHz) cho chức năng Gọi nhân viên / Thanh toán
+  buzzerPlayTone(2400, 70);
+  delay(50);
+  buzzerPlayTone(2800, 80);
+}
+
 // =========================================================================================
 // 🔋 6. GIAO TIẾP IC ĐO DUNG LƯỢNG PIN MAX17048G_T10 (I2C)
 // =========================================================================================
@@ -445,7 +494,7 @@ void syncNTP() {
 // =========================================================================================
 // 🌐 8. TRUYỀN DỮ LIỆU ĐẾN BACKEND NESTJS
 // =========================================================================================
-bool sendOrderEvent(const String &eventType, String &outOrderCode, String &outErrorMsg) {
+bool sendOrderEvent(const String &eventType, String &outOrderCode, String &outErrorMsg, const ButtonConfig* itemConfig = nullptr) {
   if (WiFi.status() != WL_CONNECTED) {
     if (savedSsid.length() == 0) {
       outErrorMsg = "Chưa cấu hình Wi-Fi";
@@ -486,7 +535,12 @@ bool sendOrderEvent(const String &eventType, String &outOrderCode, String &outEr
   String requestId = "REQ-" + timestampStr + "-" + String(random(1000, 9999));
 
   // Tạo JSON Body
-  String body = "{\"eventType\":\"" + eventType + "\",\"requestId\":\"" + requestId + "\",\"battery\":" + String(batteryPct) + ",\"rssi\":" + String(rssi) + "}";
+  String body;
+  if (itemConfig != nullptr && (itemConfig->actionType == ACTION_ORDER_ITEM || strlen(itemConfig->itemId) > 0)) {
+    body = "{\"eventType\":\"" + eventType + "\",\"requestId\":\"" + requestId + "\",\"battery\":" + String(batteryPct) + ",\"rssi\":" + String(rssi) + ",\"itemId\":\"" + String(itemConfig->itemId) + "\",\"itemName\":\"" + String(itemConfig->itemName) + "\",\"quantity\":" + String(itemConfig->quantity) + "}";
+  } else {
+    body = "{\"eventType\":\"" + eventType + "\",\"requestId\":\"" + requestId + "\",\"battery\":" + String(batteryPct) + ",\"rssi\":" + String(rssi) + "}";
+  }
 
   // Ký chữ ký HMAC-SHA256: deviceId:timestamp:nonce:body
   String signaturePayload = String(DEVICE_ID) + ":" + timestampStr + ":" + nonce + ":" + body;
@@ -543,16 +597,20 @@ void enterUltraSleep() {
   // Với mạch đã câu dây sang chân RTC IO10:
   Serial.println("[SLEEP] Vào DEEP SLEEP (<15uA) qua RTC GPIO IO10...");
   Serial.flush();
-  esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_BTN_ORDER, 0);
+  esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_BTN_SW1, 0);
   esp_deep_sleep_start();
 #else
   // Với mạch nguyên bản KiCad IO39:
   // Dùng Light Sleep an toàn: thức dậy ngay lập tức trong <50us mà không bị reboot!
-  gpio_wakeup_enable((gpio_num_t)PIN_BTN_ORDER, GPIO_INTR_LOW_LEVEL);
+  gpio_wakeup_enable((gpio_num_t)PIN_BTN_SW1, GPIO_INTR_LOW_LEVEL);
+#if (CURRENT_HARDWARE_VARIANT == HARDWARE_VARIANT_TRIPLE_BUTTON)
+  gpio_wakeup_enable((gpio_num_t)PIN_BTN_SW2, GPIO_INTR_LOW_LEVEL);
+  gpio_wakeup_enable((gpio_num_t)PIN_BTN_SW3, GPIO_INTR_LOW_LEVEL);
+#endif
   esp_sleep_enable_gpio_wakeup();
   esp_light_sleep_start();
 
-  Serial.println("[SLEEP] >>> Thức dậy từ Light Sleep khi bấm SW1!");
+  Serial.println("[SLEEP] >>> Thức dậy từ Light Sleep khi bấm nút!");
 #endif
 }
 
@@ -560,7 +618,79 @@ void enterUltraSleep() {
 // 🔘 10. NHẬN DIỆN CỬ CHỈ NÚT BẤM CƠ HỌC (MULTI-GESTURE DECODER)
 // =========================================================================================
 GestureType scanButtonGesture(bool wokenFromSleep = false) {
-  bool initiallyLow = (digitalRead(PIN_BTN_ORDER) == LOW);
+#if (CURRENT_HARDWARE_VARIANT == HARDWARE_VARIANT_TRIPLE_BUTTON)
+  // === BẢN 3 NÚT (SW1, SW2, SW3) ===
+  bool sw1 = (digitalRead(PIN_BTN_SW1) == LOW);
+  bool sw2 = (digitalRead(PIN_BTN_SW2) == LOW);
+  bool sw3 = (digitalRead(PIN_BTN_SW3) == LOW);
+
+  if (!sw1 && !sw2 && !sw3 && !wokenFromSleep) return GESTURE_NONE;
+  delay(30); // Lọc rung phím debounce
+  sw1 = (digitalRead(PIN_BTN_SW1) == LOW);
+  sw2 = (digitalRead(PIN_BTN_SW2) == LOW);
+  sw3 = (digitalRead(PIN_BTN_SW3) == LOW);
+
+  unsigned long pressStart = millis();
+
+  // COMBO: Giữ đồng thời SW1 + SW3 trong 5s -> Factory Reset
+  if (sw1 && sw3) {
+    while (digitalRead(PIN_BTN_SW1) == LOW && digitalRead(PIN_BTN_SW3) == LOW) {
+      if (millis() - pressStart >= 5000) {
+        while (digitalRead(PIN_BTN_SW1) == LOW || digitalRead(PIN_BTN_SW3) == LOW) delay(10);
+        return GESTURE_ALL_HOLD_RESET;
+      }
+      delay(10);
+    }
+  }
+
+  // NÚT SW1: ĐẶT HÀNG (ORDER)
+  if (sw1) {
+    while (digitalRead(PIN_BTN_SW1) == LOW) {
+      unsigned long heldMs = millis() - pressStart;
+      if (heldMs >= 15000) {
+        while (digitalRead(PIN_BTN_SW1) == LOW) delay(10);
+        return GESTURE_HOLD_15S_FACTORY_RESET;
+      }
+      if (heldMs >= 10000) {
+        while (digitalRead(PIN_BTN_SW1) == LOW) delay(10);
+        return GESTURE_HOLD_10S_PROVISION;
+      }
+      delay(10);
+    }
+    return GESTURE_BTN1_ORDER;
+  }
+
+  // NÚT SW2: GỌI NHÂN VIÊN / THANH TOÁN (BILL / CALL STAFF)
+  if (sw2) {
+    while (digitalRead(PIN_BTN_SW2) == LOW) {
+      unsigned long heldMs = millis() - pressStart;
+      if (heldMs >= 5000) {
+        while (digitalRead(PIN_BTN_SW2) == LOW) delay(10);
+        return GESTURE_BTN2_HOLD_CONFIG;
+      }
+      delay(10);
+    }
+    return GESTURE_BTN2_BILL;
+  }
+
+  // NÚT SW3: HỦY ĐƠN HÀNG (CANCEL ORDER / SOS)
+  if (sw3) {
+    while (digitalRead(PIN_BTN_SW3) == LOW) {
+      unsigned long heldMs = millis() - pressStart;
+      if (heldMs >= 15000) {
+        while (digitalRead(PIN_BTN_SW3) == LOW) delay(10);
+        return GESTURE_HOLD_15S_FACTORY_RESET;
+      }
+      delay(10);
+    }
+    return GESTURE_BTN3_CANCEL;
+  }
+
+  return GESTURE_NONE;
+
+#else
+  // === BẢN 1 NÚT (SW1 ĐA CỬ CHỈ) ===
+  bool initiallyLow = (digitalRead(PIN_BTN_SW1) == LOW);
 
   if (!initiallyLow && !wokenFromSleep) {
     return GESTURE_NONE;
@@ -568,12 +698,11 @@ GestureType scanButtonGesture(bool wokenFromSleep = false) {
 
   unsigned long pressStart = millis();
 
-  // Đếm thời gian giữ nút nếu phím đang được giữ
   if (initiallyLow) {
-    while (digitalRead(PIN_BTN_ORDER) == LOW) {
+    while (digitalRead(PIN_BTN_SW1) == LOW) {
       unsigned long heldMs = millis() - pressStart;
       if (heldMs >= 15000) {
-        while (digitalRead(PIN_BTN_ORDER) == LOW) delay(10);
+        while (digitalRead(PIN_BTN_SW1) == LOW) delay(10);
         return GESTURE_HOLD_15S_FACTORY_RESET;
       }
       delay(10);
@@ -584,17 +713,16 @@ GestureType scanButtonGesture(bool wokenFromSleep = false) {
     if (totalHeldMs >= 5000)  return GESTURE_HOLD_5S_ACTIVATE;
   }
 
-  // Quét nhấn đúp hoặc 5 lần nhấn
   int clicks = 1;
   unsigned long lastRelease = millis();
   const unsigned long MULTI_CLICK_WINDOW = 450;
 
   while (millis() - lastRelease < MULTI_CLICK_WINDOW) {
-    if (digitalRead(PIN_BTN_ORDER) == LOW) {
+    if (digitalRead(PIN_BTN_SW1) == LOW) {
       delay(30);
-      if (digitalRead(PIN_BTN_ORDER) == LOW) {
+      if (digitalRead(PIN_BTN_SW1) == LOW) {
         clicks++;
-        while (digitalRead(PIN_BTN_ORDER) == LOW) delay(10);
+        while (digitalRead(PIN_BTN_SW1) == LOW) delay(10);
         lastRelease = millis();
         if (clicks >= 5) return GESTURE_FIVE_CLICKS_PAIR;
       }
@@ -604,14 +732,15 @@ GestureType scanButtonGesture(bool wokenFromSleep = false) {
 
   if (clicks == 2) return GESTURE_DOUBLE_CLICK;
   return GESTURE_SINGLE_CLICK;
+#endif
 }
 
 void processGesture(GestureType gesture) {
   if (gesture == GESTURE_NONE) return;
 
   // Khôi phục cài đặt gốc
-  if (gesture == GESTURE_HOLD_15S_FACTORY_RESET) {
-    Serial.println("[RESET] Phát hiện giữ 15s: KHÔI PHỤC CÀI ĐẶT GỐC...");
+  if (gesture == GESTURE_HOLD_15S_FACTORY_RESET || gesture == GESTURE_ALL_HOLD_RESET) {
+    Serial.println("[RESET] Khôi phục cài đặt gốc: Xóa sạch bộ nhớ NVS Flash...");
     prefs.clear();
     setLed(COLOR_RED);
     buzzerError();
@@ -621,7 +750,10 @@ void processGesture(GestureType gesture) {
   }
 
   // Chế độ cấu hình không dây BLE / SoftAP
-  if (gesture == GESTURE_FIVE_CLICKS_PAIR || gesture == GESTURE_HOLD_10S_PROVISION || savedSsid.length() == 0) {
+  if (gesture == GESTURE_FIVE_CLICKS_PAIR || 
+      gesture == GESTURE_HOLD_10S_PROVISION || 
+      gesture == GESTURE_BTN2_HOLD_CONFIG || 
+      savedSsid.length() == 0) {
     Serial.println("[PROVISION] Bắt đầu chế độ cấu hình Wi-Fi BLE & SoftAP...");
     setLed(COLOR_BLUE);
     buzzerBeep(120);
@@ -642,27 +774,77 @@ void processGesture(GestureType gesture) {
     return;
   }
 
-  // Xử lý sự kiện đặt hàng hoặc hủy đơn
-  String eventType = "SINGLE_PRESS";
-  if (gesture == GESTURE_DOUBLE_CLICK) {
-    eventType = "CANCEL";
-    Serial.println("[GESTURE] Phát hiện NHẤN ĐÚP: Gửi yêu cầu HỦY ĐƠN HÀNG...");
-    setLed(COLOR_YELLOW);
-  } else {
-    Serial.println("[GESTURE] Phát hiện NHẤN 1 LẦN: Gửi yêu cầu ĐẶT HÀNG MỚI...");
-    setLed(COLOR_BLUE);
+  // Xử lý sự kiện theo cử chỉ & cấu hình món hàng từng nút
+  String eventType = "ORDER";
+  ButtonLedColor actionColor = COLOR_BLUE;
+  ButtonConfig* activeConfig = nullptr;
+
+  if (gesture == GESTURE_SINGLE_CLICK || gesture == GESTURE_BTN1_ORDER) {
+    activeConfig = &s_buttonConfigs[0];
+    if (activeConfig->actionType == ACTION_ORDER_ITEM) {
+      eventType = "ORDER_ITEM";
+      actionColor = COLOR_BLUE;
+      Serial.printf("[ACTION] 🔘 SW1: ĐẶT MÓN HÀNG [%s] (Mã: %s, SL: %d)\n", 
+                    activeConfig->itemName, activeConfig->itemId, activeConfig->quantity);
+    } else {
+      eventType = "ORDER";
+      actionColor = COLOR_BLUE;
+      Serial.println("[ACTION] 🔘 SW1: TẠO ĐƠN HÀNG MỚI (ORDER)");
+    }
+  } else if (gesture == GESTURE_BTN2_BILL) {
+    activeConfig = &s_buttonConfigs[1];
+    if (activeConfig->actionType == ACTION_ORDER_ITEM) {
+      eventType = "ORDER_ITEM";
+      actionColor = COLOR_CYAN;
+      Serial.printf("[ACTION] 🔘 SW2: ĐẶT MÓN HÀNG [%s] (Mã: %s, SL: %d)\n", 
+                    activeConfig->itemName, activeConfig->itemId, activeConfig->quantity);
+    } else if (activeConfig->actionType == ACTION_CALL_STAFF) {
+      eventType = "CALL_STAFF";
+      actionColor = COLOR_CYAN;
+      Serial.println("[ACTION] 🔘 SW2: GỌI NHÂN VIÊN PHỤC VỤ (CALL STAFF)");
+    } else {
+      eventType = "REQUEST_BILL";
+      actionColor = COLOR_CYAN;
+      Serial.println("[ACTION] 🔘 SW2: YÊU CẦU THANH TOÁN (REQUEST BILL)");
+    }
+  } else if (gesture == GESTURE_DOUBLE_CLICK || gesture == GESTURE_BTN3_CANCEL) {
+    activeConfig = &s_buttonConfigs[2];
+    if (activeConfig->actionType == ACTION_ORDER_ITEM) {
+      eventType = "ORDER_ITEM";
+      actionColor = COLOR_YELLOW;
+      Serial.printf("[ACTION] 🔘 SW3: ĐẶT MÓN HÀNG [%s] (Mã: %s, SL: %d)\n", 
+                    activeConfig->itemName, activeConfig->itemId, activeConfig->quantity);
+    } else {
+      eventType = "CANCEL_ORDER";
+      actionColor = COLOR_YELLOW;
+      Serial.println("[ACTION] 🔘 SW3 / DOUBLE CLICK: HỦY ĐƠN HÀNG (CANCEL ORDER)");
+    }
+  } else if (gesture == GESTURE_HOLD_5S_ACTIVATE) {
+    eventType = "ACTIVATE";
+    actionColor = COLOR_PURPLE;
+    Serial.println("[ACTION] 🔘 GIỮ 5S: ĐỒNG BỘ CẤU HÌNH (ACTIVATE)");
   }
 
+  setLed(actionColor);
+
   String orderCode, errorMsg;
-  bool ok = sendOrderEvent(eventType, orderCode, errorMsg);
+  bool ok = sendOrderEvent(eventType, orderCode, errorMsg, activeConfig);
 
   if (ok) {
-    if (eventType == "CANCEL") {
+    if (eventType == "CANCEL_ORDER") {
       Serial.println("[SUCCESS] ĐÃ HỦY ĐƠN HÀNG THÀNH CÔNG!");
       setLed(COLOR_YELLOW);
       buzzerCancel();
+    } else if (eventType == "REQUEST_BILL" || eventType == "CALL_STAFF") {
+      Serial.println("[SUCCESS] ĐÃ GỬI YÊU CẦU DỊCH VỤ TỚI PHỤC VỤ!");
+      setLed(COLOR_CYAN);
+      buzzerBill();
     } else {
-      Serial.printf("[SUCCESS] ĐẶT HÀNG THÀNH CÔNG! Mã yêu cầu: %s\n", orderCode.c_str());
+      if (activeConfig != nullptr && activeConfig->actionType == ACTION_ORDER_ITEM) {
+        Serial.printf("[SUCCESS] ĐẶT MÓN [%s] THÀNH CÔNG! Mã đơn: %s\n", activeConfig->itemName, orderCode.c_str());
+      } else {
+        Serial.printf("[SUCCESS] ĐẶT HÀNG THÀNH CÔNG! Mã đơn: %s\n", orderCode.c_str());
+      }
       setLed(COLOR_GREEN);
       buzzerSuccess();
     }
@@ -693,8 +875,15 @@ void setup() {
   Serial.println("  Schematic : Smart_Order_Button.kicad_sch");
   Serial.println("========================================================");
 
-  // Cấu hình chân
-  pinMode(PIN_BTN_ORDER, INPUT_PULLUP);
+  // Cấu hình chân nút bấm theo phiên bản phần cứng
+  pinMode(PIN_BTN_SW1, INPUT_PULLUP);
+#if (CURRENT_HARDWARE_VARIANT == HARDWARE_VARIANT_TRIPLE_BUTTON)
+  pinMode(PIN_BTN_SW2, INPUT_PULLUP);
+  pinMode(PIN_BTN_SW3, INPUT_PULLUP);
+  Serial.println("  Hardware  : BẢN 3 NÚT (SW1: Order, SW2: Bill, SW3: Cancel)");
+#else
+  Serial.println("  Hardware  : BẢN 1 NÚT (SW1 Đa cử chỉ)");
+#endif
   pinMode(PIN_LED_R, OUTPUT);
   pinMode(PIN_LED_G, OUTPUT);
   pinMode(PIN_LED_B, OUTPUT);
@@ -727,7 +916,11 @@ void setup() {
 #endif
 
   // Nếu người dùng đang giữ nút trong lúc cắm nguồn
-  if (digitalRead(PIN_BTN_ORDER) == LOW) {
+  bool initPressed = (digitalRead(PIN_BTN_SW1) == LOW);
+#if (CURRENT_HARDWARE_VARIANT == HARDWARE_VARIANT_TRIPLE_BUTTON)
+  if (!initPressed) initPressed = (digitalRead(PIN_BTN_SW2) == LOW || digitalRead(PIN_BTN_SW3) == LOW);
+#endif
+  if (initPressed) {
     GestureType gesture = scanButtonGesture(false);
     processGesture(gesture);
   }
@@ -774,8 +967,13 @@ void loop() {
   }
 #endif
 
-  // 3. Đọc cử chỉ phím SW1 nếu người dùng bấm
-  if (digitalRead(PIN_BTN_ORDER) == LOW) {
+  // 3. Đọc cử chỉ phím nếu người dùng bấm
+  bool anyPressed = (digitalRead(PIN_BTN_SW1) == LOW);
+#if (CURRENT_HARDWARE_VARIANT == HARDWARE_VARIANT_TRIPLE_BUTTON)
+  if (!anyPressed) anyPressed = (digitalRead(PIN_BTN_SW2) == LOW || digitalRead(PIN_BTN_SW3) == LOW);
+#endif
+
+  if (anyPressed) {
     GestureType gesture = scanButtonGesture(false);
     processGesture(gesture);
 

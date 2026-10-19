@@ -1,0 +1,88 @@
+# Reusable Workflow: Frontend CI
+# =============================================================================
+# Runs Node.js frontend CI: typecheck, lint, tests, optional build
+#
+# Usage:
+#   jobs:
+#     frontend:
+#       uses: ./.github/workflows/reusable/frontend-ci.yml
+#       with:
+#         node-version: '22'
+#         working-directory: 'frontend'
+#         run-build: true
+#       secrets: inherit
+# =============================================================================
+name: Frontend CI (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: 'Node.js version'
+        type: string
+        default: '22'
+      working-directory:
+        description: 'Frontend project directory'
+        type: string
+        required: true
+      run-build:
+        description: 'Whether to run production build'
+        type: boolean
+        default: true
+      run-tests:
+        description: 'Whether to run unit tests'
+        type: boolean
+        default: true
+      eslint-max-warnings:
+        description: 'Maximum ESLint warnings allowed'
+        type: number
+        default: 60
+      npm-lock-file:
+        description: 'Path to package-lock.json for cache key'
+        type: string
+        default: ''
+
+jobs:
+  frontend-ci:
+    name: "🖥️ Frontend CI (Node ${{ inputs.node-version }})"
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ inputs.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: 'npm'
+          cache-dependency-path: ${{ inputs.npm-lock-file || format('{0}/package-lock.json', inputs.working-directory) }}
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ${{ inputs.working-directory }}
+
+      - name: TypeScript type check
+        run: npx tsc --noEmit
+        working-directory: ${{ inputs.working-directory }}
+
+      - name: ESLint check
+        run: npx eslint src --ext .ts,.tsx --max-warnings ${{ inputs.eslint-max-warnings }}
+        working-directory: ${{ inputs.working-directory }}
+
+      - name: Run unit tests
+        if: ${{ inputs.run-tests }}
+        run: npm run test -- --run
+        working-directory: ${{ inputs.working-directory }}
+
+      - name: Build production bundle
+        if: ${{ inputs.run-build }}
+        run: npm run build
+        working-directory: ${{ inputs.working-directory }}
+
+      - name: Upload build artifacts
+        if: ${{ inputs.run-build }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build-${{ inputs.working-directory }}
+          path: ${{ inputs.working-directory }}/dist/
+          retention-days: 7

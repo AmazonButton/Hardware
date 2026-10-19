@@ -1,0 +1,207 @@
+# harness.config.yaml.example
+# =============================================================================
+# Harness Engineering Framework — Generic Project Configuration Template
+#
+# Copy this file to harness-engineering/harness.config.yaml and fill in the
+# placeholders. Do NOT commit real project config as this example file.
+# =============================================================================
+
+harness_framework_version: "4.0.0"
+
+project:
+  name: "<Tên dự án, con người đọc được>"
+  id: "<slug-may-doc>"
+  description: "<1-2 câu mô tả sản phẩm>"
+  type: "web-fullstack"             # mobile-only | web-only | web-fullstack | mobile-fullstack | api-only | cli | data-pipeline
+  domain: "generic"                  # generic | health-wellness | fintech | ecommerce | ... (nạp compliance/domain-packs/<domain>.md nếu khác generic)
+
+# ─────────────────────────────────────────────────────
+# Surfaces: khai báo CHỈ những surface thực sự có trong dự án này
+# ─────────────────────────────────────────────────────
+surfaces:
+  backend:
+    enabled: false
+    location: "<backend-dir>/"
+    stack: "<vd: node-nestjs | java-spring-boot | go-gin | python-fastapi>"
+    test_command: "<vd: npm test | ./mvnw test | pytest>"
+    build_command: "<vd: npm run build>"
+
+  frontend_web:
+    enabled: false
+    location: "<frontend-dir>/"
+    stack: "<vd: react-vite-typescript | nextjs>"
+    test_command: "<vd: npm run test -- --run>"
+    build_command: "<vd: npm run build>"
+
+  mobile:
+    enabled: false
+    location: "<mobile-dir>/"
+    stack: "<vd: expo-react-native | flutter>"
+    validate_command: "<vd: npm run validate>"
+    build_debug_command: "<lệnh build bản debug>"
+
+  cli_or_worker:
+    enabled: false
+    location: "<worker-dir>/"
+    stack: "<vd: python | rust | go>"
+    test_command: "<lệnh test>"
+
+# ─────────────────────────────────────────────────────
+# Multi-Role Review — bật/tắt theo nhu cầu dự án
+# ─────────────────────────────────────────────────────
+roles:
+  orchestrator: true
+  frontend_engineer: false     # bật nếu có surfaces.frontend_web hoặc mobile
+  backend_engineer: false      # bật nếu có surfaces.backend
+  devops_engineer: true
+  security_auditor: true
+  qa_engineer: true
+  devil_advocate: true         # khuyến nghị luôn bật cho lane normal/high-risk
+
+# ─────────────────────────────────────────────────────
+# Risk lanes
+# ─────────────────────────────────────────────────────
+lanes:
+  tiny:
+    role_review_required: false
+    ci_gates: ["tests-pass"]
+  normal:
+    role_review_required: true
+    ci_gates: ["tests-pass", "lint-pass", "type-check-pass"]
+    min_roles_passing: 4
+  high_risk:
+    role_review_required: true
+    ci_gates: ["tests-pass", "lint-pass", "type-check-pass", "security-scan-pass"]
+    min_roles_passing: 6
+    requires_failure_memory: true
+    requires_human_confirmation: true
+
+# ─────────────────────────────────────────────────────
+# Quality Gates — chỉnh ngưỡng theo dự án, xoá phần không dùng
+# ─────────────────────────────────────────────────────
+quality_gates:
+  frontend:
+    eslint_max_warnings: 0
+    typescript_errors: 0
+    bundle_size_gzip_kb: 500
+    lighthouse_performance_min: 75
+
+  backend:
+    test_coverage_min_pct: 60
+    dependency_critical_vulns: 0
+    dependency_high_vulns: 0
+
+  mobile:
+    apk_size_mb_warning: 75
+    required_abis: ["arm64-v8a", "x86_64"]
+    min_sdk_version: 24
+    target_sdk_version: 36
+    page_size_alignment_kb: 16
+
+  general:
+    pr_max_lines_changed: 400
+    pr_max_files_changed: 40
+
+# ─────────────────────────────────────────────────────
+# Branch strategy
+# ─────────────────────────────────────────────────────
+branching:
+  strategy: "trunk-based"           # trunk-based | gitflow | github-flow
+  main_branch: "main"
+  protected_branches: ["main"]
+  short_lived_branches: true
+  max_branch_age_days: 5
+  naming_convention: "{type}/{id}-{short-description}"
+  allowed_types: ["feat", "fix", "chore", "docs", "refactor", "test", "perf"]
+
+# ─────────────────────────────────────────────────────
+# Commit convention
+# ─────────────────────────────────────────────────────
+commits:
+  standard: "conventional-commits"
+  enforce: "ci"                     # ci | husky | both
+  scopes:
+    - "backend"
+    - "frontend"
+    - "mobile"
+    - "infra"
+    - "harness"
+    - "docs"
+    - "deps"
+    - "security"
+
+# ─────────────────────────────────────────────────────
+# Compliance — mặc định chỉ nạp bộ nguyên tắc chung
+# ─────────────────────────────────────────────────────
+compliance:
+  legal_rules_enabled: false
+  domain_pack: "generic"            # trỏ tới compliance/domain-packs/<domain_pack>.md khi cần
+  forbidden_terms: []                # điền theo dự án/ngành cụ thể, KHÔNG copy nguyên từ dự án khác
+  e2e_legal_assertion: false
+
+# ─────────────────────────────────────────────────────
+# DORA Metrics
+# ─────────────────────────────────────────────────────
+dora:
+  track: true
+  targets:
+    deployment_frequency: "weekly"
+    lead_time_hours: 72
+    change_failure_rate_pct: 15
+    mttr_hours: 24
+
+# ─────────────────────────────────────────────────────
+# Context Engineering & Session Handoff
+# ─────────────────────────────────────────────────────
+context_engineering:
+  token_budget_max: 16000
+  file_slice_limit_lines: 800
+  impact_map_required: true
+  session_handoff_enabled: true      # xem core/SESSION_HANDOFF.md
+  handoff_dir: "context/handoff/"
+
+# ─────────────────────────────────────────────────────
+# Sandbox / Shell permission policy — xem core/SANDBOX_POLICY.md
+# ─────────────────────────────────────────────────────
+sandbox:
+  policy_doc: "core/SANDBOX_POLICY.md"
+  network_write_lanes: ["high_risk"]  # lane nào cần xác nhận người trước khi gọi lệnh có network/ghi production
+
+# ─────────────────────────────────────────────────────
+# Harness CLI location
+# ─────────────────────────────────────────────────────
+cli:
+  binary_unix: "./scripts/bin/harness-cli"
+  binary_windows: ".\\scripts\\bin\\harness-cli.exe"
+  db_path: "./harness.db"
+  # Bắt buộc verify checksum trước khi dùng binary release — xem GAP_ANALYSIS mục 0.
+  expected_sha256: "<điền hash release chính thức>"
+
+# ─────────────────────────────────────────────────────
+# Golden Path Archetypes có sẵn
+# ─────────────────────────────────────────────────────
+archetypes:
+  available:
+    - id: "mobile-fullstack"
+      path: "golden-paths/archetypes/mobile-fullstack.md"
+    - id: "web-fullstack"
+      path: "golden-paths/archetypes/web-fullstack.md"
+    - id: "mobile-only"
+      path: "golden-paths/archetypes/mobile-only.md"
+    - id: "api-backend"
+      path: "golden-paths/archetypes/api-backend.md"
+    # TODO: bổ sung "cli-tool" và "data-pipeline" — xem GAP_ANALYSIS mục 2.9
+
+# ─────────────────────────────────────────────────────
+# Skills
+# ─────────────────────────────────────────────────────
+skills:
+  directory: "skills/"
+  library: []                        # liệt kê skill thực sự dùng cho dự án này
+
+# ─────────────────────────────────────────────────────
+# MCP
+# ─────────────────────────────────────────────────────
+mcp:
+  config_path: "mcp/mcp.config.json"
+  servers: []                        # chỉ bật server thực sự cần, vd: ["filesystem", "github"]

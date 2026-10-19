@@ -41,6 +41,12 @@ void LedManager::setColor(LedColor color) {
       digitalWrite(PIN_LED_BLUE, LOW);
       break;
 
+    case LED_CYAN: // Green + Blue (Dành cho chức năng Gọi phục vụ / Bill)
+      digitalWrite(PIN_LED_RED, HIGH);
+      digitalWrite(PIN_LED_GREEN, LOW);
+      digitalWrite(PIN_LED_BLUE, LOW);
+      break;
+
     case LED_WHITE: // Red + Green + Blue
       digitalWrite(PIN_LED_RED, LOW);
       digitalWrite(PIN_LED_GREEN, LOW);

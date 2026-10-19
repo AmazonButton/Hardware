@@ -1,0 +1,129 @@
+# Reusable Workflow: Security Scan
+# =============================================================================
+# Runs security scanning: NPM audit, secrets detection, SAST basics
+#
+# Usage:
+#   jobs:
+#     security:
+#       uses: ./.github/workflows/reusable/security-scan.yml
+#       with:
+#         scan-npm: true
+#         scan-dirs: '["mobile", "frontend"]'
+#       secrets: inherit
+# =============================================================================
+name: Security Scan (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      scan-npm:
+        description: 'Run npm audit on Node.js projects'
+        type: boolean
+        default: true
+      scan-dirs:
+        description: 'JSON array of directories to NPM audit'
+        type: string
+        default: '[]'
+      fail-on-critical:
+        description: 'Fail the workflow on critical vulnerabilities'
+        type: boolean
+        default: true
+
+jobs:
+  security-scan:
+    name: "🔒 Security Scan"
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ─── Secrets Detection ────────────────────────────────────────────────
+      - name: Detect hardcoded secrets
+        run: |
+          echo "Scanning for hardcoded secrets patterns..."
+          FOUND=0
+
+          # Check for common secret patterns (not in .env files or examples)
+          if grep -r \
+            -E "(password|passwd|api_key|apikey|secret|token)\s*=\s*[\"'][^$\{<>]" \
+            --include="*.java" --include="*.ts" --include="*.js" --include="*.yml" --include="*.yaml" \
+            --exclude-dir=node_modules --exclude-dir=.git \
+            --exclude="*.example" --exclude="*.template" \
+            . 2>/dev/null | grep -v \
+            "test-key\|test-secret\|test_password\|your_password\|xxx\|placeholder\|TODO\|FIXME\|example\|#" | \
+            head -5; then
+            echo "::warning::Potential hardcoded secret detected. Review the above matches."
+            FOUND=1
+          fi
+
+          # Check for AWS-like keys
+          if grep -r -E "AKIA[A-Z0-9]{16}" \
+            --exclude-dir=node_modules --exclude-dir=.git \
+            . 2>/dev/null | head -3; then
+            echo "::error::Potential AWS access key detected!"
+            exit 1
+          fi
+
+          if [ "$FOUND" -eq 0 ]; then
+            echo "✅ No hardcoded secrets detected"
+          fi
+
+      # ─── NPM Audit ───────────────────────────────────────────────────────
+      - name: NPM Audit (Node.js projects)
+        if: ${{ inputs.scan-npm }}
+        run: |
+          DIRS='${{ inputs.scan-dirs }}'
+          if [ "$DIRS" = "[]" ]; then
+            echo "::notice::No directories specified for NPM audit — skipping"
+            exit 0
+          fi
+
+          # Parse JSON array and audit each directory
+          echo "$DIRS" | python3 -c "
+          import sys, json
+          dirs = json.load(sys.stdin)
+          print('\n'.join(dirs))
+          " | while read -r dir; do
+            if [ -f "$dir/package.json" ]; then
+              echo "--- NPM Audit: $dir ---"
+              cd "$dir"
+              npm ci --quiet 2>/dev/null || true
+              if ${{ inputs.fail-on-critical }}; then
+                npm audit --audit-level=critical 2>&1 | tail -20 || \
+                  { echo "::error::Critical vulnerability found in $dir"; exit 1; }
+              else
+                npm audit --audit-level=critical 2>&1 | tail -20 || \
+                  echo "::warning::Critical vulnerability found in $dir"
+              fi
+              cd - > /dev/null
+            fi
+          done
+
+      # ─── .env Drift Check ─────────────────────────────────────────────────
+      - name: Check .env.example completeness
+        run: |
+          if [ -f ".env.example" ] && [ -f ".env" ]; then
+            MISSING=0
+            while IFS= read -r line; do
+              # Get key name (before =)
+              KEY=$(echo "$line" | grep -oP '^[A-Z_]+(?==)' || true)
+              [ -z "$KEY" ] && continue
+
+              if ! grep -q "^$KEY=" .env; then
+                echo "::warning::Key '$KEY' from .env.example is missing in .env"
+                MISSING=1
+              fi
+            done < .env.example
+
+            if [ "$MISSING" -eq 0 ]; then
+              echo "✅ .env has all keys from .env.example"
+            fi
+          else
+            echo "::notice::Skipping .env drift check (.env or .env.example not found)"
+          fi
+
+      # ─── Dependency License Check ─────────────────────────────────────────
+      - name: Summary
+        run: |
+          echo "✅ Security scan complete"
+          echo "Review any warnings above before merging."

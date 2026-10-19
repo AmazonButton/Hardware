@@ -18,8 +18,11 @@ void StateMachine::init() {
   delay(50);
 
   Serial.println("\n==================================================");
-  Serial.println("🔘 SMART ORDER BUTTON — ESP32-S3 PRODUCTION FIRMWARE");
   Serial.printf("Device ID: %s | Model: ESP32-S3-WROOM-1\n", DEVICE_ID.c_str());
+  Serial.printf("Hardware Mode: %s\n", 
+    ButtonManager::getVariant() == HARDWARE_VARIANT_TRIPLE_BUTTON 
+      ? "BẢN 3 NÚT (SW1: Order, SW2: Bill, SW3: Cancel)" 
+      : "BẢN 1 NÚT (SW1: Multi-gesture)");
   Serial.println("Schematic: Smart_Order_Button.kicad_sch");
   Serial.println("==================================================");
 
@@ -118,18 +121,24 @@ void StateMachine::handleGesture(ButtonGesture gesture) {
     return;
   }
 
-  // 1. Gesture: Hold 15s -> Factory Reset
-  if (gesture == GESTURE_HOLD_15S_FACTORY_RESET) {
-    Serial.println("[RESET] Hold 15s detected: FACTORY RESETTING DEVICE...");
+  // 1. Khôi phục cài đặt gốc:
+  // - Bản 1 nút: Nhấn giữ SW1 15s
+  // - Bản 3 nút: Giữ đồng thời SW1 + SW3 trong 5s (hoặc giữ SW1/SW3 15s)
+  if (gesture == GESTURE_HOLD_15S_FACTORY_RESET || gesture == GESTURE_ALL_HOLD_RESET) {
+    Serial.println("[RESET] Factory reset requested. Clearing Wi-Fi credentials...");
     WiFiManager::clearCredentials();
     LedManager::blink(LED_RED, 5, 100);
     BuzzerManager::beepError();
     return;
   }
 
-  // 2. Gesture: 5 Clicks (Quick Pairing) hoặc Hold 10s -> Bật BLE & SoftAP Captive Portal
-  if (gesture == GESTURE_FIVE_CLICKS_PAIR || gesture == GESTURE_HOLD_10S_PROVISION) {
-    Serial.println("[MODE] BLUE LED: 5-Clicks or Provision detected -> Starting BLE Auto-Pairing & SoftAP");
+  // 2. Chế độ cấu hình BLE & SoftAP:
+  // - Bản 1 nút: 5 Clicks hoặc giữ SW1 10s
+  // - Bản 3 nút: Giữ SW2 trong 5s (hoặc giữ SW1 10s)
+  if (gesture == GESTURE_FIVE_CLICKS_PAIR || 
+      gesture == GESTURE_HOLD_10S_PROVISION || 
+      gesture == GESTURE_BTN2_HOLD_CONFIG) {
+    Serial.println("[MODE] Starting BLE Auto-Pairing & SoftAP Provisioning...");
     LedManager::setColor(LED_BLUE);
     BuzzerManager::beepBoot();
 
@@ -159,19 +168,64 @@ void StateMachine::handleGesture(ButtonGesture gesture) {
     return;
   }
 
-  // 3. Gesture: Hold 5s -> Wake / Activate / Config Sync
-  if (gesture == GESTURE_HOLD_5S_ACTIVATE) {
-    Serial.println("[MODE] PURPLE LED: Device Configuration / Activation Sync");
-    LedManager::setColor(LED_PURPLE);
-  } else if (gesture == GESTURE_DOUBLE_PRESS) {
-    Serial.println("[GESTURE] DOUBLE PRESS -> CANCEL ORDER");
-    LedManager::setColor(LED_YELLOW);
-  } else {
-    Serial.println("[GESTURE] SINGLE PRESS -> NEW ORDER");
-    LedManager::setColor(LED_BLUE);
+  // 3. Phân loại nghiệp vụ theo cử chỉ & cấu hình từng nút (Món hàng / Dịch vụ)
+  String eventTypeStr = "ORDER";
+  LedColor actionColor = LED_BLUE;
+  ButtonConfig activeConfig;
+  bool hasActiveConfig = false;
+
+  if (gesture == GESTURE_SHORT_PRESS || gesture == GESTURE_BTN1_ORDER) {
+    activeConfig = ButtonManager::getButtonConfig(0);
+    hasActiveConfig = true;
+    if (activeConfig.actionType == ACTION_ORDER_ITEM) {
+      eventTypeStr = "ORDER_ITEM";
+      actionColor = LED_BLUE;
+      Serial.printf("[ACTION] 🔘 SW1: ĐẶT MÓN HÀNG [%s] (Mã SKU: %s, Số lượng: %d)\n", 
+                    activeConfig.itemName, activeConfig.itemId, activeConfig.quantity);
+    } else {
+      eventTypeStr = "ORDER";
+      actionColor = LED_BLUE;
+      Serial.println("[ACTION] 🔘 SW1: TẠO ĐƠN HÀNG MỚI (NEW ORDER)");
+    }
+  } else if (gesture == GESTURE_BTN2_BILL) {
+    activeConfig = ButtonManager::getButtonConfig(1);
+    hasActiveConfig = true;
+    if (activeConfig.actionType == ACTION_ORDER_ITEM) {
+      eventTypeStr = "ORDER_ITEM";
+      actionColor = LED_CYAN;
+      Serial.printf("[ACTION] 🔘 SW2: ĐẶT MÓN HÀNG [%s] (Mã SKU: %s, Số lượng: %d)\n", 
+                    activeConfig.itemName, activeConfig.itemId, activeConfig.quantity);
+    } else if (activeConfig.actionType == ACTION_CALL_STAFF) {
+      eventTypeStr = "CALL_STAFF";
+      actionColor = LED_CYAN;
+      Serial.printf("[ACTION] 🔘 SW2: GỌI NHÂN VIÊN PHỤC VỤ (CALL STAFF)\n");
+    } else {
+      eventTypeStr = "REQUEST_BILL";
+      actionColor = LED_CYAN;
+      Serial.println("[ACTION] 🔘 SW2: YÊU CẦU THANH TOÁN / GỌI PHỤC VỤ (REQUEST BILL)");
+    }
+  } else if (gesture == GESTURE_DOUBLE_PRESS || gesture == GESTURE_BTN3_CANCEL) {
+    activeConfig = ButtonManager::getButtonConfig(2);
+    hasActiveConfig = true;
+    if (activeConfig.actionType == ACTION_ORDER_ITEM) {
+      eventTypeStr = "ORDER_ITEM";
+      actionColor = LED_YELLOW;
+      Serial.printf("[ACTION] 🔘 SW3: ĐẶT MÓN HÀNG [%s] (Mã SKU: %s, Số lượng: %d)\n", 
+                    activeConfig.itemName, activeConfig.itemId, activeConfig.quantity);
+    } else {
+      eventTypeStr = "CANCEL_ORDER";
+      actionColor = LED_YELLOW;
+      Serial.println("[ACTION] 🔘 SW3 / DOUBLE-PRESS: HỦY ĐƠN HÀNG (CANCEL ORDER)");
+    }
+  } else if (gesture == GESTURE_HOLD_5S_ACTIVATE) {
+    eventTypeStr = "ACTIVATE";
+    actionColor = LED_PURPLE;
+    Serial.println("[ACTION] 🔘 HOLD 5S: KÍCH HOẠT THIẾT BỊ / ĐỒNG BỘ CẤU HÌNH");
   }
 
-  // 4. Kết nối Wi-Fi & Truyền sự kiện
+  LedManager::setColor(actionColor);
+
+  // 4. Kết nối Wi-Fi & Truyền sự kiện bảo mật
   uint32_t batteryMv = PowerManager::readBatteryMillivolts();
   uint8_t batteryPct = PowerManager::calculateBatteryPercentage(batteryMv);
 
@@ -195,14 +249,6 @@ void StateMachine::handleGesture(ButtonGesture gesture) {
     return;
   }
 
-  // 5. Chuẩn bị sự kiện gửi lên Cloud Backend
-  String eventTypeStr = "SINGLE_PRESS";
-  if (gesture == GESTURE_DOUBLE_PRESS) {
-    eventTypeStr = "DOUBLE_PRESS";
-  } else if (gesture == GESTURE_HOLD_5S_ACTIVATE) {
-    eventTypeStr = "ACTIVATE";
-  }
-
   int8_t rssi = WiFi.RSSI();
   Serial.printf("[API] Transmitting event: %s (Batt: %d%%, RSSI: %d dBm)\n",
                 eventTypeStr.c_str(), batteryPct, rssi);
@@ -213,30 +259,39 @@ void StateMachine::handleGesture(ButtonGesture gesture) {
       DEVICE_SECRET,
       eventTypeStr,
       batteryPct,
-      rssi
+      rssi,
+      hasActiveConfig ? &activeConfig : nullptr
   );
 
-  // 6. Phản hồi LED & Còi Buzzer
+  // 5. Phản hồi LED & Còi Buzzer trực quan theo từng nghiệp vụ
   if (result.success) {
-    if (gesture == GESTURE_DOUBLE_PRESS) {
-      Serial.println("[SUCCESS] Order cancelled successfully by Double-Press.");
+    if (eventTypeStr == "CANCEL_ORDER") {
+      Serial.println("[SUCCESS] Hủy đơn hàng thành công!");
       LedManager::setColor(LED_YELLOW);
       BuzzerManager::beepCancel();
+    } else if (eventTypeStr == "REQUEST_BILL" || eventTypeStr == "CALL_STAFF") {
+      Serial.println("[SUCCESS] Đã gửi yêu cầu dịch vụ tới phục vụ!");
+      LedManager::setColor(LED_CYAN);
+      BuzzerManager::beepBill();
     } else {
-      Serial.printf("[SUCCESS] GREEN LED: Order created! Code: %s\n", result.orderNumber.c_str());
+      if (hasActiveConfig && activeConfig.actionType == ACTION_ORDER_ITEM) {
+        Serial.printf("[SUCCESS] GREEN LED: Đặt món [%s] thành công! Mã đơn: %s\n", 
+                      activeConfig.itemName, result.orderNumber.c_str());
+      } else {
+        Serial.printf("[SUCCESS] GREEN LED: Đặt hàng thành công! Mã đơn: %s\n", result.orderNumber.c_str());
+      }
       LedManager::setColor(LED_GREEN);
       BuzzerManager::beepSuccess();
     }
     delay(1200);
   } else {
-    Serial.printf("[ERROR] RED LED: Cloud rejected request (%s)\n",
-                  result.errorMessage.c_str());
+    Serial.printf("[ERROR] RED LED: Máy chủ từ chối (%s)\n", result.errorMessage.c_str());
     LedManager::setColor(LED_RED);
     BuzzerManager::beepError();
     delay(1200);
   }
 
-  // 7. Tắt Wi-Fi và LED trước khi quay lại chế độ ngủ
+  // 6. Tắt Wi-Fi và LED trước khi quay lại chế độ ngủ
   WiFiManager::stopWiFi();
   LedManager::setColor(LED_OFF);
 }
