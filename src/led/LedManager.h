@@ -2,7 +2,7 @@
 #define LED_MANAGER_H
 
 #include <Arduino.h>
-#include "config.h"
+#include "../../include/config.h"
 
 enum LedColor {
   LED_OFF,

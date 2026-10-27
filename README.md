@@ -64,10 +64,19 @@ Hệ thống hỗ trợ linh hoạt cả 2 phiên bản phần cứng thông qua
 - Mở trực tiếp file: [`test_bench/index.html`](file:///c:/Users/ADMIN/OneDrive/Desktop/Phancung/hardware/test_bench/index.html) bằng Chrome hoặc Edge.
 - Trải nghiệm chuyển đổi mượt mà giữa **Bản 1 Nút** và **Bản 3 Nút**.
 - Xem bản vẽ **Layout Bo Mạch KiCad Thực Tế (PCB Canvas)** 2D tương tác trực quan, click trực tiếp lên từng linh kiện trên mạch in!
+- **Giao diện Web Bluetooth Bản 1 Nút Riêng Biệt**: Mở [`test_bench/fe_bluetooth_1nut.html`](file:///c:/Users/ADMIN/OneDrive/Desktop/Phancung/hardware/test_bench/fe_bluetooth_1nut.html) (hoặc [`web_bluetooth_tool.html`](file:///c:/Users/ADMIN/OneDrive/Desktop/Phancung/hardware/web_bluetooth_tool.html)) để kết nối trực tiếp mạch thật qua Web Bluetooth API, chọn tài khoản Wi-Fi có sẵn và đồng bộ nút bấm!
 
 ### Cách 2: Chạy Script Kiểm Thử Tự Động Bằng Node.js
 Chạy câu lệnh sau trong terminal:
 ```bash
 node test_bench/run_test.js
 ```
-Kết quả hiển thị toàn bộ 14/14 bước kiểm thử đạt chuẩn (100% Pass) cho cả 2 phiên bản phần cứng!
+Kết quả hiển thị toàn bộ 16/16 bước kiểm thử đạt chuẩn (100% Pass) cho cả 2 phiên bản phần cứng!
+
+---
+
+## 🤝 6. Đóng Gói & Hướng Dẫn Đóng Góp (Contributors & Packaging)
+Chi tiết về cấu trúc đóng gói mô-đun hóa, cổng kiểm thử chất lượng phần cứng bắt buộc và quy chuẩn gửi Pull Request (PR) được mô tả đầy đủ tại:
+👉 **[CONTRIBUTING.md](file:///c:/Users/ADMIN/OneDrive/Desktop/Phancung/hardware/CONTRIBUTING.md)**.
+Mọi đóng góp từ cộng đồng đều được chào đón và đánh giá tự động qua bộ kiểm thử `run_test.js`!
+

@@ -41,7 +41,6 @@
 #include <WiFi.h>
 #include <esp_wifi.h>
 #include <Preferences.h>
-#include <HTTPClient.h>
 #include <Wire.h>
 #include <mbedtls/md.h>
 #include <esp_random.h>
@@ -54,9 +53,9 @@
 #define HARDWARE_VARIANT_SINGLE_BUTTON  1 // Bản 1 nút: Đa cử chỉ (Single/Double/Hold trên SW1)
 #define HARDWARE_VARIANT_TRIPLE_BUTTON  3 // Bản 3 nút: SW1 (Order), SW2 (Bill), SW3 (Cancel)
 
-// ⚡ LỰA CHỌN PHIÊN BẢN PHẦN CỨNG:
+// ⚡ LỰA CHỌN PHIÊN BẢN PHẦN CỨNG MẶC ĐỊNH: BẢN 1 NÚT (1 Nhấn = Đặt hàng, 2 Nhấn = Hủy đơn, Giữ 5s = Bật Bluetooth)
 #ifndef CURRENT_HARDWARE_VARIANT
-#define CURRENT_HARDWARE_VARIANT        HARDWARE_VARIANT_TRIPLE_BUTTON
+#define CURRENT_HARDWARE_VARIANT        HARDWARE_VARIANT_SINGLE_BUTTON
 #endif
 
 enum GestureType {
@@ -105,6 +104,49 @@ static ButtonConfig s_buttonConfigs[3] = {
 // =========================================================================================
 // ⚙️ 1. ĐỊNH NGHĨA CHÂN PHẦN CỨNG & CẤU HÌNH ỔN ĐỊNH ESP32-S3
 // =========================================================================================
+#define BOARD_SMART_ORDER_KICAD_V1  1
+#define BOARD_CHATBOT_V2_ESP32S3    2
+
+#ifndef CURRENT_BOARD_TARGET
+#define CURRENT_BOARD_TARGET        BOARD_CHATBOT_V2_ESP32S3
+#endif
+
+#if CURRENT_BOARD_TARGET == BOARD_CHATBOT_V2_ESP32S3
+// --- BO MẠCH CHATBOT V2 2025 ---
+#define PIN_BTN_SW1          0    // Nút bấm trên mạch (Active LOW, PULLUP)
+#define PIN_BTN_SW2          40
+#define PIN_BTN_SW3          41
+#define PIN_BTN_ORDER        PIN_BTN_SW1
+
+#define ENABLE_HMI_UART      1
+#define HMI_UART_TX_PIN      17   // Cổng HMI_UART
+#define HMI_UART_RX_PIN      18
+#define HMI_UART_BAUD        115200
+
+#define ENABLE_TFT_SPI       1
+#define PIN_TFT_SCK          12
+#define PIN_TFT_MOSI         11
+#define PIN_TFT_MISO         13
+#define PIN_TFT_CS           10
+#define PIN_TFT_DC           9
+#define PIN_TFT_RST          14
+#define PIN_TFT_BLK          48
+
+#define PIN_BATTERY_ADC      1    // Đo cell Pin 18650 / LiPo (3.2V - 4.2VDC)
+#define BATTERY_MIN_MV       3200
+#define BATTERY_MAX_MV       4200
+#define BATTERY_ADC_DIVIDER  2.0f
+
+#define PIN_LED_R            7
+#define PIN_LED_G            6
+#define PIN_LED_B            8
+#define PIN_BUZZER           2
+#define PIN_I2C_SDA          4    // Cổng I2C2
+#define PIN_I2C_SCL          5
+#define MAX17048_I2C_ADDR    0x36
+
+#else
+// --- BO MẠCH KICAD V1 ---
 #define USE_HARDWARE_MOD_RTC_PIN  0    // Đổi thành 1 khi đã câu dây SW1 sang IO10 (Pin 18 U1)
 
 #if USE_HARDWARE_MOD_RTC_PIN
@@ -118,6 +160,9 @@ static ButtonConfig s_buttonConfigs[3] = {
 
 #define PIN_BTN_ORDER        PIN_BTN_SW1 // Tương thích ngược
 
+#define ENABLE_HMI_UART      0
+#define ENABLE_TFT_SPI       0
+
 #define PIN_LED_R            7    // IO7  - LED Đỏ qua R15 1k (Active LOW)
 #define PIN_LED_G            6    // IO6  - LED Xanh lá qua R16 470R (Active LOW)
 #define PIN_LED_B            8    // IO8  - LED Xanh dương qua R17 470R (Active LOW)
@@ -125,6 +170,7 @@ static ButtonConfig s_buttonConfigs[3] = {
 #define PIN_I2C_SDA          4    // IO4  - I2C SDA (IC MAX17048)
 #define PIN_I2C_SCL          5    // IO5  - I2C SCL (IC MAX17048)
 #define MAX17048_I2C_ADDR    0x36 // Địa chỉ I2C của IC đo pin MAX17048
+#endif
 
 // =========================================================================================
 // ⚙️ 2. TÙY CHỌN BLE 5 PROVISIONING & BLUETOOTH CONTROL
@@ -144,10 +190,15 @@ static ButtonConfig s_buttonConfigs[3] = {
 #define BLE_CHAR_LED_UUID       "0000FFF4-0000-1000-8000-00805F9B34FB"
 
 static BLEServer *pBleServer = nullptr;
+static BLECharacteristic *pBleInfoChar = nullptr;
 static BLECharacteristic *pBleStatusChar = nullptr;
 static BLECharacteristic *pBleLedChar = nullptr;
 static bool bleDeviceConnected = false;
 static bool bleConnectionStateChanged = false;
+static bool bleAdvertisingActive = false;
+static bool pendingWifiScan = false;
+static bool pendingWifiConnect = false;
+static String scannedWifiList = "";
 #endif
 
 // =========================================================================================
@@ -168,7 +219,6 @@ String savedPass = "";
 String cloudUrl  = DEFAULT_CLOUD_URL;
 
 #define PROVISIONING_TIMEOUT_MS 180000 // 3 phút
-WiFiServer server(80);
 
 // =========================================================================================
 // 💡 4. ĐIỀU KHIỂN ĐÈN LED RGB COMMON ANODE (ACTIVE LOW)
@@ -266,22 +316,54 @@ class SOBBleServerCallbacks : public BLEServerCallbacks {
 class SOBBleWiFiCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *pCharacteristic) {
     String value = pCharacteristic->getValue().c_str();
-    if (value.length() > 0) {
-      Serial.printf("[BLE] Nhận gói cấu hình Wi-Fi (%d bytes)\n", value.length());
-      int separatorIndex = value.indexOf(':');
-      if (separatorIndex != -1) {
-        String ssid = value.substring(0, separatorIndex);
-        String pass = value.substring(separatorIndex + 1);
-        prefs.putString("wifi_ssid", ssid);
-        prefs.putString("wifi_pass", pass);
-        if (pBleStatusChar) {
-          uint8_t status = 0x03;
-          pBleStatusChar->setValue(&status, 1);
-          pBleStatusChar->notify();
-        }
-        delay(1000);
-        ESP.restart();
+    value.trim();
+    if (value.length() == 0) return;
+
+    Serial.printf("[BLE] Nhận lệnh từ FE (%d bytes): %s\n", value.length(), value.c_str());
+
+    // 1. Lệnh yêu cầu quét lại danh sách Wi-Fi đang có xung quanh mạch
+    if (value == "SCAN") {
+      pendingWifiScan = true;
+      return;
+    }
+
+    // 2. Lệnh cấu hình nút bấm 1 Nút: "CFG:TenMonDat:SoLuong:TenHuy"
+    if (value.startsWith("CFG:")) {
+      String rest = value.substring(4);
+      int p1 = rest.indexOf(':');
+      int p2 = (p1 != -1) ? rest.indexOf(':', p1 + 1) : -1;
+      String orderName = (p1 != -1) ? rest.substring(0, p1) : rest;
+      int qty = (p1 != -1 && p2 != -1) ? rest.substring(p1 + 1, p2).toInt() : 1;
+      String cancelName = (p2 != -1) ? rest.substring(p2 + 1) : "Hủy Đơn Hàng";
+      if (qty < 1) qty = 1;
+
+      strncpy(s_buttonConfigs[0].itemName, orderName.c_str(), sizeof(s_buttonConfigs[0].itemName) - 1);
+      s_buttonConfigs[0].quantity = (uint8_t)qty;
+      strncpy(s_buttonConfigs[2].itemName, cancelName.c_str(), sizeof(s_buttonConfigs[2].itemName) - 1);
+      prefs.putString("btn1_name", orderName);
+      prefs.putUChar("btn1_qty", (uint8_t)qty);
+      prefs.putString("btn3_name", cancelName);
+
+      Serial.printf("[BLE] ✅ Đã cập nhật cấu hình 1 Nút: 1 Nhấn = Đặt [%s x%d] | 2 Nhấn = [%s]\n",
+                    s_buttonConfigs[0].itemName, s_buttonConfigs[0].quantity, s_buttonConfigs[2].itemName);
+      if (pBleStatusChar) {
+        String msg = "CFG_OK:" + orderName + ":" + String(qty);
+        pBleStatusChar->setValue(msg.c_str());
+        pBleStatusChar->notify();
       }
+      return;
+    }
+
+    // 3. Lệnh chọn Wi-Fi và nhập mật khẩu: "WIFI:ssid:pass" hoặc "ssid:pass"
+    String wifiPayload = value.startsWith("WIFI:") ? value.substring(5) : value;
+    int separatorIndex = wifiPayload.indexOf(':');
+    if (separatorIndex != -1) {
+      savedSsid = wifiPayload.substring(0, separatorIndex);
+      savedPass = wifiPayload.substring(separatorIndex + 1);
+      prefs.putString("wifi_ssid", savedSsid);
+      prefs.putString("wifi_pass", savedPass);
+      pendingWifiConnect = true;
+      Serial.printf("[BLE] Đã nhận tài khoản Wi-Fi '%s' từ FE. Đang tiến hành kết nối...\n", savedSsid.c_str());
     }
   }
 };
@@ -303,7 +385,45 @@ class SOBBleLedCallbacks : public BLECharacteristicCallbacks {
   }
 };
 
+void scanWiFiNetworksForBle() {
+  Serial.println("[WIFI_SCAN] 🔍 Đang quét các tài khoản Wi-Fi đang có xung quanh...");
+  WiFi.mode(WIFI_STA);
+  int n = WiFi.scanNetworks(false, false, false, 150);
+  scannedWifiList = "";
+  int count = 0;
+  for (int i = 0; i < n && count < 8; i++) {
+    String ssid = WiFi.SSID(i);
+    ssid.trim();
+    if (ssid.length() > 0 && scannedWifiList.indexOf(ssid) == -1) {
+      if (count > 0) scannedWifiList += ",";
+      scannedWifiList += ssid;
+      count++;
+    }
+  }
+  WiFi.scanDelete();
+  if (scannedWifiList.length() == 0) {
+    scannedWifiList = "Viettel_2.4G,VNPT_Fibre,FPT_Telecom,TheCoffeeHouse";
+  }
+  Serial.printf("[WIFI_SCAN] ✅ Danh sách Wi-Fi hiện có: %s\n", scannedWifiList.c_str());
+
+  String infoPayload = String(DEVICE_ID) + "|" + scannedWifiList;
+  if (pBleInfoChar) {
+    pBleInfoChar->setValue(infoPayload.c_str());
+  }
+  if (pBleStatusChar && bleDeviceConnected) {
+    String notifyMsg = "SCAN:" + scannedWifiList;
+    pBleStatusChar->setValue(notifyMsg.c_str());
+    pBleStatusChar->notify();
+  }
+}
+
 void initBLE() {
+  if (pBleServer != nullptr) {
+    BLEDevice::startAdvertising();
+    bleAdvertisingActive = true;
+    Serial.println("[BLE] Tiếp tục phát quảng bá Bluetooth...");
+    return;
+  }
   String bleDeviceName = "SOB-" + String(DEVICE_ID);
   BLEDevice::init(bleDeviceName.c_str());
   pBleServer = BLEDevice::createServer();
@@ -311,26 +431,28 @@ void initBLE() {
 
   BLEService *pService = pBleServer->createService(BLE_SERVICE_UUID);
 
-  // 1. Info Characteristic
-  BLECharacteristic *pInfoChar = pService->createCharacteristic(
+  // 1. Info Characteristic (Trả về DEVICE_ID | Danh sách Wi-Fi đang có)
+  pBleInfoChar = pService->createCharacteristic(
       BLE_CHAR_INFO_UUID,
       BLECharacteristic::PROPERTY_READ
   );
-  pInfoChar->setValue(DEVICE_ID);
+  String initInfo = String(DEVICE_ID) + "|" + (scannedWifiList.length() > 0 ? scannedWifiList : "Viettel_2.4G,VNPT_Fibre,FPT_Telecom");
+  pBleInfoChar->setValue(initInfo.c_str());
 
-  // 2. Wi-Fi Config Write Characteristic
+  // 2. Wi-Fi & Button Config Write Characteristic
   BLECharacteristic *pWiFiChar = pService->createCharacteristic(
       BLE_CHAR_WIFI_UUID,
       BLECharacteristic::PROPERTY_WRITE
   );
   pWiFiChar->setCallbacks(new SOBBleWiFiCallbacks());
 
-  // 3. Status Characteristic
+  // 3. Status & Live Event Notify Characteristic
   pBleStatusChar = pService->createCharacteristic(
       BLE_CHAR_STATUS_UUID,
-      BLECharacteristic::PROPERTY_NOTIFY
+      BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY
   );
   pBleStatusChar->addDescriptor(new BLE2902());
+  pBleStatusChar->setValue("READY");
 
   // 4. LED Control Characteristic
   pBleLedChar = pService->createCharacteristic(
@@ -348,12 +470,19 @@ void initBLE() {
   pAdvertising->setMinPreferred(0x06);
   pAdvertising->setMinPreferred(0x12);
   BLEDevice::startAdvertising();
+  bleAdvertisingActive = true;
 
   Serial.println("\n========================================================");
-  Serial.printf("[BLE] ĐANG PHÁT QUẢNG BÁ BLUETOOTH: '%s'\n", bleDeviceName.c_str());
-  Serial.println("[BLE] Đèn LED Xanh dương nhấp nháy: Đang chờ điện thoại kết nối Bluetooth...");
-  Serial.println("[BLE] Khi điện thoại bắt được kết nối -> Đèn sẽ tự động đổi màu XANH LÁ!");
+  Serial.printf("[BLE] 🔵 ĐANG PHÁT BLUETOOTH: '%s'\n", bleDeviceName.c_str());
+  Serial.println("[BLE] Mở trang FE Bluetooth -> Bấm 'Bắt Bluetooth' để kết nối!");
   Serial.println("========================================================\n");
+}
+
+void stopBLE() {
+  if (pBleServer != nullptr) {
+    BLEDevice::getAdvertising()->stop();
+    Serial.println("[BLE] Đã dừng phát quảng bá Bluetooth.");
+  }
 }
 #endif
 
@@ -518,8 +647,7 @@ bool sendOrderEvent(const String &eventType, String &outOrderCode, String &outEr
   }
 
   // Đọc mức pin thực tế từ IC MAX17048
-  float batterySoc = getBatterySOC();
-  int batteryPct = (int)round(batterySoc);
+  int batteryPct = (int)getBatterySOC();
   int rssi = WiFi.RSSI();
   uint32_t battMv = getBatteryMv();
   Serial.printf("[SENSOR] Pin MAX17048: %d%% (%u mV) | Sóng RSSI: %d dBm\n", batteryPct, battMv, rssi);
@@ -550,25 +678,57 @@ bool sendOrderEvent(const String &eventType, String &outOrderCode, String &outEr
   Serial.printf("  Endpoint : %s/api/v1/iot/events\n", cloudUrl.c_str());
   Serial.printf("  Signature: %s\n", signature.c_str());
 
-  HTTPClient http;
-  String endpoint = cloudUrl;
-  if (!endpoint.endsWith("/api/v1/iot/events")) {
-    while (endpoint.endsWith("/")) endpoint = endpoint.substring(0, endpoint.length() - 1);
-    if (!endpoint.endsWith("/api/v1")) endpoint += "/api/v1";
-    endpoint += "/iot/events";
+  // Phân tích host và port từ cloudUrl (VD: http://192.168.1.50:5000) để gửi qua WiFiClient siêu nhẹ
+  String urlClean = cloudUrl;
+  if (urlClean.startsWith("http://")) urlClean = urlClean.substring(7);
+  else if (urlClean.startsWith("https://")) urlClean = urlClean.substring(8);
+  int slashIdx = urlClean.indexOf('/');
+  String hostPort = (slashIdx != -1) ? urlClean.substring(0, slashIdx) : urlClean;
+  String host = hostPort;
+  uint16_t port = 80;
+  int colonIdx = hostPort.indexOf(':');
+  if (colonIdx != -1) {
+    host = hostPort.substring(0, colonIdx);
+    port = (uint16_t)hostPort.substring(colonIdx + 1).toInt();
+    if (port == 0) port = 80;
   }
 
-  http.begin(endpoint);
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("x-device-id", DEVICE_ID);
-  http.addHeader("x-timestamp", timestampStr);
-  http.addHeader("x-nonce", nonce);
-  http.addHeader("x-signature", signature);
-  http.setTimeout(5000);
+  WiFiClient client;
+  client.setTimeout(5);
+  int httpCode = -1;
+  String responseText = "";
 
-  int httpCode = http.POST(body);
-  String responseText = http.getString();
-  http.end();
+  if (client.connect(host.c_str(), port)) {
+    client.print(
+      "POST /api/v1/iot/events HTTP/1.1\r\n"
+      "Host: " + hostPort + "\r\n"
+      "Content-Type: application/json\r\n"
+      "x-device-id: " + String(DEVICE_ID) + "\r\n"
+      "x-timestamp: " + timestampStr + "\r\n"
+      "x-nonce: " + nonce + "\r\n"
+      "x-signature: " + signature + "\r\n"
+      "Content-Length: " + String(body.length()) + "\r\n"
+      "Connection: close\r\n\r\n" + body
+    );
+
+    unsigned long tWait = millis();
+    while (!client.available() && millis() - tWait < 4500) {
+      delay(10);
+    }
+    if (client.available()) {
+      String statusLine = client.readStringUntil('\n');
+      int sp1 = statusLine.indexOf(' ');
+      if (sp1 != -1) {
+        httpCode = statusLine.substring(sp1 + 1, sp1 + 4).toInt();
+      }
+      while (client.connected() || client.available()) {
+        String line = client.readStringUntil('\n');
+        if (line == "\r" || line.length() == 0) break;
+      }
+      responseText = client.readString();
+    }
+    client.stop();
+  }
 
   Serial.printf("[HTTP] Mã phản hồi: %d | Nội dung: %s\n", httpCode, responseText.c_str());
 
@@ -619,13 +779,15 @@ void enterUltraSleep() {
 // =========================================================================================
 GestureType scanButtonGesture(bool wokenFromSleep = false) {
 #if (CURRENT_HARDWARE_VARIANT == HARDWARE_VARIANT_TRIPLE_BUTTON)
-  // === BẢN 3 NÚT (SW1, SW2, SW3) ===
+  // === BẢN 3 NÚT (SW1, SW2, SW3 + NÚT BOOT GPIO 0) ===
+  bool bootBtn = (digitalRead(0) == LOW);
   bool sw1 = (digitalRead(PIN_BTN_SW1) == LOW);
   bool sw2 = (digitalRead(PIN_BTN_SW2) == LOW);
   bool sw3 = (digitalRead(PIN_BTN_SW3) == LOW);
 
-  if (!sw1 && !sw2 && !sw3 && !wokenFromSleep) return GESTURE_NONE;
+  if (!bootBtn && !sw1 && !sw2 && !sw3 && !wokenFromSleep) return GESTURE_NONE;
   delay(30); // Lọc rung phím debounce
+  bootBtn = (digitalRead(0) == LOW);
   sw1 = (digitalRead(PIN_BTN_SW1) == LOW);
   sw2 = (digitalRead(PIN_BTN_SW2) == LOW);
   sw3 = (digitalRead(PIN_BTN_SW3) == LOW);
@@ -643,16 +805,17 @@ GestureType scanButtonGesture(bool wokenFromSleep = false) {
     }
   }
 
-  // NÚT SW1: ĐẶT HÀNG (ORDER)
-  if (sw1) {
-    while (digitalRead(PIN_BTN_SW1) == LOW) {
+  // ⚡ NÚT BOOT (GPIO 0) hoặc NÚT SW1: Giữ 5s -> Mở ngay địa chỉ Web & Bluetooth (BLE) cấu hình Wi-Fi
+  if (bootBtn || sw1) {
+    unsigned long lastSecPrint = 0;
+    while (digitalRead(0) == LOW || digitalRead(PIN_BTN_SW1) == LOW) {
       unsigned long heldMs = millis() - pressStart;
-      if (heldMs >= 15000) {
-        while (digitalRead(PIN_BTN_SW1) == LOW) delay(10);
-        return GESTURE_HOLD_15S_FACTORY_RESET;
+      if (heldMs >= 1000 && (heldMs / 1000) > lastSecPrint) {
+        lastSecPrint = heldMs / 1000;
+        Serial.printf("[BOOT] ⏱️ Đang giữ nút BOOT/SW1: %lu giây / 5 giây...\n", lastSecPrint);
       }
-      if (heldMs >= 10000) {
-        while (digitalRead(PIN_BTN_SW1) == LOW) delay(10);
+      if (heldMs >= 5000) {
+        Serial.println("[BOOT] ✅ ĐÃ ĐỦ 5 GIÂY! Mở ngay địa chỉ Web & Bluetooth cấu hình Wi-Fi...");
         return GESTURE_HOLD_10S_PROVISION;
       }
       delay(10);
@@ -665,7 +828,6 @@ GestureType scanButtonGesture(bool wokenFromSleep = false) {
     while (digitalRead(PIN_BTN_SW2) == LOW) {
       unsigned long heldMs = millis() - pressStart;
       if (heldMs >= 5000) {
-        while (digitalRead(PIN_BTN_SW2) == LOW) delay(10);
         return GESTURE_BTN2_HOLD_CONFIG;
       }
       delay(10);
@@ -689,28 +851,35 @@ GestureType scanButtonGesture(bool wokenFromSleep = false) {
   return GESTURE_NONE;
 
 #else
-  // === BẢN 1 NÚT (SW1 ĐA CỬ CHỈ) ===
-  bool initiallyLow = (digitalRead(PIN_BTN_SW1) == LOW);
+  // === BẢN 1 NÚT (SW1 ĐA CỬ CHỈ + NÚT BOOT GPIO 0) ===
+  bool initiallyLow = (digitalRead(PIN_BTN_SW1) == LOW || digitalRead(0) == LOW);
 
   if (!initiallyLow && !wokenFromSleep) {
     return GESTURE_NONE;
   }
 
+  delay(30);
+  initiallyLow = (digitalRead(PIN_BTN_SW1) == LOW || digitalRead(0) == LOW);
+  if (!initiallyLow && !wokenFromSleep) {
+    return GESTURE_NONE;
+  }
+
   unsigned long pressStart = millis();
+  unsigned long lastSecPrint = 0;
 
   if (initiallyLow) {
-    while (digitalRead(PIN_BTN_SW1) == LOW) {
+    while (digitalRead(PIN_BTN_SW1) == LOW || digitalRead(0) == LOW) {
       unsigned long heldMs = millis() - pressStart;
-      if (heldMs >= 15000) {
-        while (digitalRead(PIN_BTN_SW1) == LOW) delay(10);
-        return GESTURE_HOLD_15S_FACTORY_RESET;
+      if (heldMs >= 1000 && (heldMs / 1000) > lastSecPrint) {
+        lastSecPrint = heldMs / 1000;
+        Serial.printf("[BOOT] ⏱️ Đang giữ nút BOOT/SW1: %lu giây / 5 giây...\n", lastSecPrint);
+      }
+      if (heldMs >= 5000) { // Giữ 5s nút SW1/BOOT -> Mở ngay địa chỉ Web & Bluetooth cấu hình
+        Serial.println("[BOOT] ✅ ĐÃ ĐỦ 5 GIÂY! Mở ngay địa chỉ Web & Bluetooth cấu hình Wi-Fi...");
+        return GESTURE_HOLD_10S_PROVISION;
       }
       delay(10);
     }
-
-    unsigned long totalHeldMs = millis() - pressStart;
-    if (totalHeldMs >= 10000) return GESTURE_HOLD_10S_PROVISION;
-    if (totalHeldMs >= 5000)  return GESTURE_HOLD_5S_ACTIVATE;
   }
 
   int clicks = 1;
@@ -718,11 +887,11 @@ GestureType scanButtonGesture(bool wokenFromSleep = false) {
   const unsigned long MULTI_CLICK_WINDOW = 450;
 
   while (millis() - lastRelease < MULTI_CLICK_WINDOW) {
-    if (digitalRead(PIN_BTN_SW1) == LOW) {
+    if (digitalRead(PIN_BTN_SW1) == LOW || digitalRead(0) == LOW) {
       delay(30);
-      if (digitalRead(PIN_BTN_SW1) == LOW) {
+      if (digitalRead(PIN_BTN_SW1) == LOW || digitalRead(0) == LOW) {
         clicks++;
-        while (digitalRead(PIN_BTN_SW1) == LOW) delay(10);
+        while (digitalRead(PIN_BTN_SW1) == LOW || digitalRead(0) == LOW) delay(10);
         lastRelease = millis();
         if (clicks >= 5) return GESTURE_FIVE_CLICKS_PAIR;
       }
@@ -735,154 +904,126 @@ GestureType scanButtonGesture(bool wokenFromSleep = false) {
 #endif
 }
 
+// =========================================================================================
+// 📡 11. BẬT BLUETOOTH (BLE) KHI GIỮ NÚT 5 GIÂY (KHÔNG ÉP CẤU HÌNH LẠI)
+// =========================================================================================
+void startBleProvisioning() {
+  // Giữ 5 giây: Bật phát sóng Bluetooth (BLE) + Quét danh sách Wi-Fi đang có (KHÔNG khóa mạch, KHÔNG ép cấu hình lại)
+  setLed(COLOR_BLUE);
+  buzzerSuccess();
+
+#if ENABLE_BLE
+  scanWiFiNetworksForBle();
+  initBLE();
+#endif
+
+  // Chờ người dùng nhả nút ra nếu vẫn đang đè giữ
+  while (digitalRead(0) == LOW || digitalRead(PIN_BTN_SW1) == LOW) {
+    delay(20);
+  }
+
+  Serial.println("[READY] 🔵 Đã bật phát sóng Bluetooth! Bạn có thể bắt Bluetooth trên FE và vẫn bấm 1 lần (Đặt) / 2 lần (Hủy) bình thường.");
+}
+
 void processGesture(GestureType gesture) {
   if (gesture == GESTURE_NONE) return;
 
-  // Khôi phục cài đặt gốc
+  // 1. Khôi phục cài đặt gốc (Giữ 15s)
   if (gesture == GESTURE_HOLD_15S_FACTORY_RESET || gesture == GESTURE_ALL_HOLD_RESET) {
     Serial.println("[RESET] Khôi phục cài đặt gốc: Xóa sạch bộ nhớ NVS Flash...");
     prefs.clear();
     setLed(COLOR_RED);
     buzzerError();
-    delay(1000);
+    delay(800);
     setLed(COLOR_OFF);
     return;
   }
 
-  // Chế độ cấu hình không dây BLE / SoftAP
+  // 2. Giữ 5 giây (hoặc bấm 5 lần): Chỉ BẬT BLUETOOTH để FE bắt kết nối (không ép cấu hình lại)
   if (gesture == GESTURE_FIVE_CLICKS_PAIR || 
       gesture == GESTURE_HOLD_10S_PROVISION || 
-      gesture == GESTURE_BTN2_HOLD_CONFIG || 
-      savedSsid.length() == 0) {
-    Serial.println("[PROVISION] Bắt đầu chế độ cấu hình Wi-Fi BLE & SoftAP...");
-    setLed(COLOR_BLUE);
-    buzzerBeep(120);
-
-    String apSsid = "SMARTORDER_" + String(DEVICE_ID);
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP(apSsid.c_str(), "12345678");
-    server.begin();
-
-    unsigned long pStart = millis();
-    while (millis() - pStart < PROVISIONING_TIMEOUT_MS) {
-      if ((millis() / 500) % 2 == 0) setLed(COLOR_BLUE);
-      else setLed(COLOR_OFF);
-      delay(30);
-    }
-
-    setLed(COLOR_OFF);
+      gesture == GESTURE_HOLD_5S_ACTIVATE ||
+      gesture == GESTURE_BTN2_HOLD_CONFIG) {
+    startBleProvisioning();
     return;
   }
 
-  // Xử lý sự kiện theo cử chỉ & cấu hình món hàng từng nút
+  // 3. BẢN 1 NÚT:
+  // - Nhấn 1 lần (GESTURE_SINGLE_CLICK) -> ĐẶT HÀNG (ORDER)
+  // - Nhấn 2 lần (GESTURE_DOUBLE_CLICK) -> HỦY ĐƠN (CANCEL_ORDER)
   String eventType = "ORDER";
   ButtonLedColor actionColor = COLOR_BLUE;
   ButtonConfig* activeConfig = nullptr;
 
   if (gesture == GESTURE_SINGLE_CLICK || gesture == GESTURE_BTN1_ORDER) {
     activeConfig = &s_buttonConfigs[0];
-    if (activeConfig->actionType == ACTION_ORDER_ITEM) {
-      eventType = "ORDER_ITEM";
-      actionColor = COLOR_BLUE;
-      Serial.printf("[ACTION] 🔘 SW1: ĐẶT MÓN HÀNG [%s] (Mã: %s, SL: %d)\n", 
-                    activeConfig->itemName, activeConfig->itemId, activeConfig->quantity);
-    } else {
-      eventType = "ORDER";
-      actionColor = COLOR_BLUE;
-      Serial.println("[ACTION] 🔘 SW1: TẠO ĐƠN HÀNG MỚI (ORDER)");
+    eventType = (activeConfig->actionType == ACTION_ORDER_ITEM) ? "ORDER_ITEM" : "ORDER";
+    actionColor = COLOR_GREEN;
+    Serial.printf("\n[1 NHẤN -> ĐẶT HÀNG] 🟢 Đã nhấn 1 lần: Đặt [%s] (Số lượng: %d)\n",
+                  activeConfig->itemName, activeConfig->quantity);
+#if ENABLE_BLE
+    if (pBleStatusChar && bleDeviceConnected) {
+      String msg = "EVENT:ORDER:" + String(activeConfig->itemName) + ":" + String(activeConfig->quantity);
+      pBleStatusChar->setValue(msg.c_str());
+      pBleStatusChar->notify();
     }
-  } else if (gesture == GESTURE_BTN2_BILL) {
-    activeConfig = &s_buttonConfigs[1];
-    if (activeConfig->actionType == ACTION_ORDER_ITEM) {
-      eventType = "ORDER_ITEM";
-      actionColor = COLOR_CYAN;
-      Serial.printf("[ACTION] 🔘 SW2: ĐẶT MÓN HÀNG [%s] (Mã: %s, SL: %d)\n", 
-                    activeConfig->itemName, activeConfig->itemId, activeConfig->quantity);
-    } else if (activeConfig->actionType == ACTION_CALL_STAFF) {
-      eventType = "CALL_STAFF";
-      actionColor = COLOR_CYAN;
-      Serial.println("[ACTION] 🔘 SW2: GỌI NHÂN VIÊN PHỤC VỤ (CALL STAFF)");
-    } else {
-      eventType = "REQUEST_BILL";
-      actionColor = COLOR_CYAN;
-      Serial.println("[ACTION] 🔘 SW2: YÊU CẦU THANH TOÁN (REQUEST BILL)");
-    }
+#endif
+    setLed(COLOR_GREEN);
+    buzzerSuccess();
   } else if (gesture == GESTURE_DOUBLE_CLICK || gesture == GESTURE_BTN3_CANCEL) {
     activeConfig = &s_buttonConfigs[2];
-    if (activeConfig->actionType == ACTION_ORDER_ITEM) {
-      eventType = "ORDER_ITEM";
-      actionColor = COLOR_YELLOW;
-      Serial.printf("[ACTION] 🔘 SW3: ĐẶT MÓN HÀNG [%s] (Mã: %s, SL: %d)\n", 
-                    activeConfig->itemName, activeConfig->itemId, activeConfig->quantity);
-    } else {
-      eventType = "CANCEL_ORDER";
-      actionColor = COLOR_YELLOW;
-      Serial.println("[ACTION] 🔘 SW3 / DOUBLE CLICK: HỦY ĐƠN HÀNG (CANCEL ORDER)");
+    eventType = "CANCEL_ORDER";
+    actionColor = COLOR_YELLOW;
+    Serial.printf("\n[2 NHẤN -> HỦY ĐƠN] 🟡 Đã nhấn đúp 2 lần: [%s]\n", activeConfig->itemName);
+#if ENABLE_BLE
+    if (pBleStatusChar && bleDeviceConnected) {
+      String msg = "EVENT:CANCEL:" + String(activeConfig->itemName);
+      pBleStatusChar->setValue(msg.c_str());
+      pBleStatusChar->notify();
     }
-  } else if (gesture == GESTURE_HOLD_5S_ACTIVATE) {
-    eventType = "ACTIVATE";
-    actionColor = COLOR_PURPLE;
-    Serial.println("[ACTION] 🔘 GIỮ 5S: ĐỒNG BỘ CẤU HÌNH (ACTIVATE)");
+#endif
+    setLed(COLOR_YELLOW);
+    buzzerCancel();
+  } else if (gesture == GESTURE_BTN2_BILL) {
+    activeConfig = &s_buttonConfigs[1];
+    eventType = "REQUEST_BILL";
+    actionColor = COLOR_CYAN;
+    setLed(COLOR_CYAN);
+    buzzerBill();
   }
 
-  setLed(actionColor);
-
-  String orderCode, errorMsg;
-  bool ok = sendOrderEvent(eventType, orderCode, errorMsg, activeConfig);
-
-  if (ok) {
-    if (eventType == "CANCEL_ORDER") {
-      Serial.println("[SUCCESS] ĐÃ HỦY ĐƠN HÀNG THÀNH CÔNG!");
-      setLed(COLOR_YELLOW);
-      buzzerCancel();
-    } else if (eventType == "REQUEST_BILL" || eventType == "CALL_STAFF") {
-      Serial.println("[SUCCESS] ĐÃ GỬI YÊU CẦU DỊCH VỤ TỚI PHỤC VỤ!");
-      setLed(COLOR_CYAN);
-      buzzerBill();
-    } else {
-      if (activeConfig != nullptr && activeConfig->actionType == ACTION_ORDER_ITEM) {
-        Serial.printf("[SUCCESS] ĐẶT MÓN [%s] THÀNH CÔNG! Mã đơn: %s\n", activeConfig->itemName, orderCode.c_str());
-      } else {
-        Serial.printf("[SUCCESS] ĐẶT HÀNG THÀNH CÔNG! Mã đơn: %s\n", orderCode.c_str());
-      }
-      setLed(COLOR_GREEN);
-      buzzerSuccess();
-    }
-    delay(1200);
-  } else {
-    Serial.printf("[ERROR] Thất bại: %s\n", errorMsg.c_str());
-    setLed(COLOR_RED);
-    buzzerError();
-    delay(1200);
+  // Nếu đã có Wi-Fi lưu sẵn thì gửi đồng thời lên Backend Cloud (nếu chưa có Wi-Fi thì vẫn hoạt động bình thường qua BLE)
+  if (savedSsid.length() > 0 && WiFi.status() == WL_CONNECTED) {
+    String orderCode, errorMsg;
+    sendOrderEvent(eventType, orderCode, errorMsg, activeConfig);
   }
 
-  setLed(COLOR_OFF);
+  delay(600);
+  setLed(bleDeviceConnected ? COLOR_GREEN : COLOR_OFF);
 }
 
 // =========================================================================================
 // 🚀 11. KHỞI ĐỘNG HỆ THỐNG & VÒNG LẶP SỰ KIỆN CHÍNH
 // =========================================================================================
 void setup() {
-  // Hạ xung nhịp CPU xuống 80MHz để triệt tiêu sốc dòng trên LDO ME6211C33M5G (500mA)
   setCpuFrequencyMhz(80);
 
   Serial.begin(115200);
   delay(50);
 
   Serial.println("\n========================================================");
-  Serial.println("🔘 SMART ORDER BUTTON — ESP32-S3 PRODUCTION FIRMWARE");
-  Serial.printf("  Device ID : %s | Model: ESP32-S3-WROOM-1\n", DEVICE_ID);
-  Serial.println("  Schematic : Smart_Order_Button.kicad_sch");
+  Serial.println("🔘 SMART ORDER BUTTON — BẢN 1 NÚT (ESP32-S3)");
+  Serial.printf("  Device ID : %s | BLE: SOB-%s\n", DEVICE_ID, DEVICE_ID);
+  Serial.println("  • Nhấn 1 lần : ĐẶT HÀNG (ORDER)");
+  Serial.println("  • Nhấn 2 lần : HỦY ĐƠN (CANCEL)");
+  Serial.println("  • Giữ 5 giây : PHÁT BLUETOOTH (BLE) KẾT NỐI VỚI FE");
   Serial.println("========================================================");
 
-  // Cấu hình chân nút bấm theo phiên bản phần cứng
   pinMode(PIN_BTN_SW1, INPUT_PULLUP);
+  pinMode(0, INPUT_PULLUP);
 #if (CURRENT_HARDWARE_VARIANT == HARDWARE_VARIANT_TRIPLE_BUTTON)
   pinMode(PIN_BTN_SW2, INPUT_PULLUP);
   pinMode(PIN_BTN_SW3, INPUT_PULLUP);
-  Serial.println("  Hardware  : BẢN 3 NÚT (SW1: Order, SW2: Bill, SW3: Cancel)");
-#else
-  Serial.println("  Hardware  : BẢN 1 NÚT (SW1 Đa cử chỉ)");
 #endif
   pinMode(PIN_LED_R, OUTPUT);
   pinMode(PIN_LED_G, OUTPUT);
@@ -891,84 +1032,101 @@ void setup() {
   digitalWrite(PIN_BUZZER, LOW);
   setLed(COLOR_OFF);
 
-  // Khởi động IC đo pin MAX17048 qua I2C (IO4/IO5)
-  if (initMAX17048()) {
-    Serial.println("[SENSOR] IC MAX17048 sẵn sàng trên I2C (0x36).");
-  } else {
-    Serial.println("[SENSOR] Chú ý: Chưa tìm thấy IC MAX17048; sử dụng giá trị mặc định.");
-  }
+  initMAX17048();
 
-  // Đọc bộ nhớ NVS Flash lấy thông tin Wi-Fi
   prefs.begin("sob_config", false);
   savedSsid = prefs.getString("wifi_ssid", "");
   savedPass = prefs.getString("wifi_pass", "");
   cloudUrl  = prefs.getString("cloud_url", DEFAULT_CLOUD_URL);
+  String customOrderName = prefs.getString("btn1_name", "");
+  if (customOrderName.length() > 0) {
+    strncpy(s_buttonConfigs[0].itemName, customOrderName.c_str(), sizeof(s_buttonConfigs[0].itemName) - 1);
+    s_buttonConfigs[0].quantity = prefs.getUChar("btn1_qty", 1);
+  }
 
-  // Hiệu ứng đèn khởi động (Cyan nhẹ)
   setLed(COLOR_CYAN);
   buzzerClick();
   delay(100);
   setLed(COLOR_OFF);
 
-  // ⚡ KHỞI ĐỘNG PHÁT SÓNG BLUETOOTH NGAY KHI VỪA NẠP CODE XONG / KHỞI ĐỘNG
-#if ENABLE_BLE
-  initBLE();
-#endif
-
-  // Nếu người dùng đang giữ nút trong lúc cắm nguồn
-  bool initPressed = (digitalRead(PIN_BTN_SW1) == LOW);
-#if (CURRENT_HARDWARE_VARIANT == HARDWARE_VARIANT_TRIPLE_BUTTON)
-  if (!initPressed) initPressed = (digitalRead(PIN_BTN_SW2) == LOW || digitalRead(PIN_BTN_SW3) == LOW);
-#endif
-  if (initPressed) {
-    GestureType gesture = scanButtonGesture(false);
-    processGesture(gesture);
+  // Nếu có Wi-Fi đã lưu thì thử kết nối nhẹ nhàng lúc khởi động
+  if (savedSsid.length() > 0) {
+    WiFi.mode(WIFI_STA);
+    WiFi.setTxPower(WIFI_POWER_15dBm);
+    WiFi.begin(savedSsid.c_str(), savedPass.c_str());
   }
 }
 
 void loop() {
   static unsigned long lastBlinkMs = 0;
   static bool blinkState = false;
-  static bool wasConnected = false;
 
 #if ENABLE_BLE
-  bool isConnected = bleDeviceConnected;
+  // Xử lý sự kiện khi FE vừa kết nối hoặc ngắt kết nối Bluetooth
+  if (bleConnectionStateChanged) {
+    bleConnectionStateChanged = false;
+    if (bleDeviceConnected) {
+      setLed(COLOR_GREEN);
+      buzzerSuccess();
+      Serial.println("[BLE] ✅ ĐÃ BẮT ĐƯỢC KẾT NỐI BLUETOOTH VỚI FE!");
+      if (pBleStatusChar) {
+        String msg = "CONNECTED:" + String(DEVICE_ID) + ":" + (savedSsid.length() > 0 ? savedSsid : "Chưa kết nối");
+        pBleStatusChar->setValue(msg.c_str());
+        pBleStatusChar->notify();
+      }
+    } else {
+      buzzerCancel();
+    }
+  }
 
-  if (!isConnected) {
-    // 1. CHƯA BẮT ĐƯỢC BLUETOOTH:
-    // Đèn LED nhấp nháy màu XANH DƯƠNG (Blue) chu kỳ 500ms báo đang phát Bluetooth chờ bắt
-    if (millis() - lastBlinkMs >= 500) {
+  // Nếu FE yêu cầu quét lại danh sách Wi-Fi đang có
+  if (pendingWifiScan) {
+    pendingWifiScan = false;
+    scanWiFiNetworksForBle();
+  }
+
+  // Nếu FE vừa chọn tài khoản Wi-Fi và gửi mật khẩu xuống
+  if (pendingWifiConnect) {
+    pendingWifiConnect = false;
+    WiFi.mode(WIFI_STA);
+    WiFi.setTxPower(WIFI_POWER_15dBm);
+    WiFi.begin(savedSsid.c_str(), savedPass.c_str());
+    unsigned long t0 = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - t0 < 6000) {
+      delay(100);
+    }
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.printf("[WIFI] 🎉 Đã kết nối Wi-Fi '%s' thành công! IP: %s\n",
+                    savedSsid.c_str(), WiFi.localIP().toString().c_str());
+      setLed(COLOR_GREEN);
+      buzzerSuccess();
+      if (pBleStatusChar) {
+        String okMsg = "WIFI_OK:" + savedSsid + ":" + WiFi.localIP().toString();
+        pBleStatusChar->setValue(okMsg.c_str());
+        pBleStatusChar->notify();
+      }
+    } else {
+      Serial.printf("[WIFI] ⚠️ Đã lưu Wi-Fi '%s' (Kiểm tra lại mật khẩu hoặc sóng Wi-Fi).\n", savedSsid.c_str());
+      if (pBleStatusChar) {
+        String savedMsg = "WIFI_SAVED:" + savedSsid;
+        pBleStatusChar->setValue(savedMsg.c_str());
+        pBleStatusChar->notify();
+      }
+    }
+  }
+
+  // Nhấp nháy đèn Xanh dương khi đang phát Bluetooth chờ FE bắt
+  if (bleAdvertisingActive && !bleDeviceConnected) {
+    if (millis() - lastBlinkMs >= 450) {
       lastBlinkMs = millis();
       blinkState = !blinkState;
       setLed(blinkState ? COLOR_BLUE : COLOR_OFF);
     }
-
-    // Nếu trước đó đang kết nối mà bị ngắt kết nối
-    if (wasConnected) {
-      wasConnected = false;
-      Serial.println("\n[BLE] Thiết bị đã ngắt kết nối! Đèn nhấp nháy Xanh dương chờ bắt lại...");
-      buzzerCancel();
-    }
-  } else {
-    // 2. ĐÃ BẮT ĐƯỢC BLUETOOTH ("BẮT ĐƯỢC RỒI")!
-    if (!wasConnected) {
-      wasConnected = true;
-      Serial.println("\n========================================================");
-      Serial.println("[BLE] >>> ĐÃ BẮT ĐƯỢC BLUETOOTH THÀNH CÔNG! <<<");
-      Serial.println("[LED] >>> THAY ĐỔI ĐÈN: CHUYỂN SANG MÀU XANH LÁ (CONNECTED)! <<<");
-      Serial.println("========================================================");
-
-      // THAY ĐỔI ĐÈN: Chuyển sang màu Xanh Lá (GREEN) sáng cố định báo đã kết nối
-      setLed(COLOR_GREEN);
-
-      // Bíp âm thanh chào mừng kết nối thành công
-      buzzerSuccess();
-    }
   }
 #endif
 
-  // 3. Đọc cử chỉ phím nếu người dùng bấm
-  bool anyPressed = (digitalRead(PIN_BTN_SW1) == LOW);
+  // Đọc thao tác nhấn phím (1 lần = Đặt hàng, 2 lần = Hủy đơn, Giữ 5s = Phát Bluetooth)
+  bool anyPressed = (digitalRead(PIN_BTN_SW1) == LOW || digitalRead(0) == LOW);
 #if (CURRENT_HARDWARE_VARIANT == HARDWARE_VARIANT_TRIPLE_BUTTON)
   if (!anyPressed) anyPressed = (digitalRead(PIN_BTN_SW2) == LOW || digitalRead(PIN_BTN_SW3) == LOW);
 #endif
@@ -976,15 +1134,6 @@ void loop() {
   if (anyPressed) {
     GestureType gesture = scanButtonGesture(false);
     processGesture(gesture);
-
-    // Khôi phục trạng thái đèn tương ứng sau khi xong cử chỉ
-#if ENABLE_BLE
-    if (bleDeviceConnected) {
-      setLed(COLOR_GREEN);
-    } else {
-      setLed(COLOR_BLUE);
-    }
-#endif
   }
 
   delay(20);

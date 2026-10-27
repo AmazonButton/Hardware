@@ -2,7 +2,7 @@
 #define BUTTON_MANAGER_H
 
 #include <Arduino.h>
-#include "config.h"
+#include "../../include/config.h"
 
 enum ButtonGesture {
   GESTURE_NONE = 0,

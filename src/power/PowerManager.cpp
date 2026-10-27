@@ -6,20 +6,27 @@
 static MAX17048 s_gauge;
 
 void PowerManager::init() {
-  // Hạ tần số CPU xuống 80MHz để tránh sốc dòng trên IC hạ áp LDO ME6211 (500mA)
+  // Hạ tần số CPU xuống 80MHz để tránh sốc dòng trên IC hạ áp LDO
   setCpuFrequencyMhz(ESP32_CPU_FREQ_MHZ);
 
   // Khởi tạo các chân nút bấm có điện trở kéo lên nội bộ
   pinMode(PIN_BUTTON_SW1, INPUT_PULLUP);
+#if CURRENT_HARDWARE_VARIANT == HARDWARE_VARIANT_TRIPLE_BUTTON
   pinMode(PIN_BUTTON_SW2, INPUT_PULLUP);
   pinMode(PIN_BUTTON_SW3, INPUT_PULLUP);
+#endif
 
-  // Initialize MAX17048 I2C Fuel Gauge on IO4 (SDA) and IO5 (SCL)
+#ifdef PIN_BATTERY_ADC
+  pinMode(PIN_BATTERY_ADC, INPUT);
+  analogReadResolution(12);
+#endif
+
+  // Initialize MAX17048 I2C Fuel Gauge on I2C Bus
   bool gaugeOk = s_gauge.begin(PIN_I2C_SDA, PIN_I2C_SCL);
   if (gaugeOk) {
     Serial.println("[POWER] MAX17048 Fuel Gauge detected on I2C (addr 0x36).");
   } else {
-    Serial.println("[POWER] Note: MAX17048 I2C not responding; fallback to nominal estimation.");
+    Serial.println("[POWER] MAX17048 not detected; using direct ADC for Pin 18650/LiPo (3.2V - 4.2V).");
   }
 }
 
@@ -38,7 +45,7 @@ void PowerManager::enterSleep() {
   esp_sleep_enable_ext0_wakeup(PIN_BUTTON_SW1, 0);
   esp_deep_sleep_start();
 #else
-  // Với mạch nguyên bản KiCad / PCB (IO39 thuộc HP domain):
+  // Với mạch nguyên bản:
   // Dùng Light Sleep: tiêu thụ điện cực thấp (~300uA), đánh thức ngay lập tức trong <50us
   gpio_wakeup_enable(PIN_BUTTON_SW1, GPIO_INTR_LOW_LEVEL);
   if (ButtonManager::getVariant() == HARDWARE_VARIANT_TRIPLE_BUTTON) {
@@ -49,7 +56,7 @@ void PowerManager::enterSleep() {
 
   esp_light_sleep_start();
 
-  // Khi bấm bất kỳ nút nào (SW1, SW2, SW3 kéo chân xuống LOW), CPU tiếp tục thực thi ngay lập tức tại đây!
+  // Khi bấm nút kéo chân xuống LOW, CPU tiếp tục thực thi ngay lập tức tại đây!
   Serial.println("[POWER] >>> Woke up instantly from Light Sleep via Button press!");
 #endif
 }
@@ -62,6 +69,15 @@ uint32_t PowerManager::readBatteryMillivolts() {
   if (s_gauge.isConnected()) {
     return s_gauge.getVoltageMv();
   }
+
+#ifdef PIN_BATTERY_ADC
+  uint32_t rawMv = analogReadMilliVolts(PIN_BATTERY_ADC);
+  if (rawMv > 50) {
+    uint32_t battMv = (uint32_t)(rawMv * BATTERY_ADC_DIVIDER_RATIO);
+    return constrain(battMv, (uint32_t)2500, (uint32_t)4500);
+  }
+#endif
+
   return 3850; // Nominal fallback (3.85V)
 }
 
@@ -71,11 +87,11 @@ uint8_t PowerManager::calculateBatteryPercentage(uint32_t millivolts) {
     return (uint8_t)constrain((int)round(soc), 0, 100);
   }
 
-  // Fallback estimation from millivolts
-  if (millivolts == 0) millivolts = 3850;
-  if (millivolts >= 4200) return 100;
-  if (millivolts <= 3300) return 0;
-  return (uint8_t)(((millivolts - 3300) * 100) / (4200 - 3300));
+  // Fallback estimation for 18650 / LiPo cell (3.2V to 4.2V)
+  if (millivolts == 0) millivolts = readBatteryMillivolts();
+  if (millivolts >= BATTERY_MAX_MV) return 100;
+  if (millivolts <= BATTERY_MIN_MV) return 0;
+  return (uint8_t)(((millivolts - BATTERY_MIN_MV) * 100) / (BATTERY_MAX_MV - BATTERY_MIN_MV));
 }
 
 MAX17048& PowerManager::getGauge() {

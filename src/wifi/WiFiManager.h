@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <Preferences.h>
-#include "config.h"
+#include "../../include/config.h"
 
 class WiFiManager {
 public:

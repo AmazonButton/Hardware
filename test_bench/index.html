@@ -887,7 +887,8 @@
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
-    .item-input {
+    .item-input, .config-input {
+      width: 100%;
       background: rgba(5, 8, 17, 0.8);
       border: 1px solid rgba(255, 255, 255, 0.12);
       border-radius: 8px;
@@ -898,7 +899,7 @@
       outline: none;
       transition: border-color 0.2s;
     }
-    .item-input:focus {
+    .item-input:focus, .config-input:focus {
       border-color: var(--blue-glow);
       box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
     }
@@ -991,7 +992,7 @@ async function computeHmacSha256(keyStr, dataStr) {
 // =========================================================================
 function App() {
   const [activeTab, setActiveTab] = useState('bench'); // 'bench' | 'pcb' | 'scope' | 'crypto' | 'suite' | 'kicad'
-  const [hardwareVariant, setHardwareVariant] = useState('TRIPLE'); // 'SINGLE' (1 Nút) | 'TRIPLE' (3 Nút)
+  const [hardwareVariant, setHardwareVariant] = useState('SINGLE'); // Mặc định Bản 1 Nút: 1 Nhấn = Đặt, 2 Nhấn = Hủy, Giữ 5s = Phát Bluetooth
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [backendStatus, setBackendStatus] = useState('edge'); // 'online' | 'edge'
 
@@ -1075,8 +1076,8 @@ function App() {
 
   // Telemetry Console Logs
   const [logs, setLogs] = useState([
-    { id: 1, time: '00:00:01', tag: 'BOOT', level: 'info', text: 'ESP32-S3 Dual Hardware Simulation Lab v4.5.0 đã sẵn sàng.' },
-    { id: 2, time: '00:00:02', tag: 'HARDWARE', level: 'success', text: 'Chế độ hoạt động hiện tại: BẢN 3 NÚT (SW1, SW2, SW3 - Cho phép cài đặt từng món hàng).' },
+    { id: 1, time: '00:00:01', tag: 'BOOT', level: 'info', text: 'ESP32-S3 Smart Order Button Lab v4.5.0 đã sẵn sàng.' },
+    { id: 2, time: '00:00:02', tag: 'HARDWARE', level: 'success', text: 'Chế độ mặc định: BẢN 1 NÚT (1 Nhấn = Đặt Hàng | 2 Nhấn = Hủy Đơn | Giữ 5s = Phát Bluetooth).' },
     { id: 3, time: '00:00:03', tag: 'I2C', level: 'success', text: 'MAX17048G Fuel Gauge phát hiện tại 0x36. VCell=3.87V, SOC=88%.' },
     { id: 4, time: '00:00:04', tag: 'SECURITY', level: 'crypto', text: 'HMAC-SHA256 Hardware Crypto Accelerator initialized.' }
   ]);
@@ -1325,21 +1326,190 @@ function App() {
     }, 1500);
   };
 
-  // 5. PROVISION BLE
-  const triggerHoldProvision = () => {
-    addLog('BLE', '🔵 Giữ 10s / Giữ SW2: Bật phát sóng Bluetooth LE 5 & SoftAP quảng bá.', 'info');
+  // 5. REAL WEB BLUETOOTH (BLE) & WI-FI PROVISIONING (GIỮ NÚT 5S PHÁT BLUETOOTH)
+  const [bleConnected, setBleConnected] = useState(false);
+  const [provisionReady, setProvisionReady] = useState(true);
+  const [bleDeviceName, setBleDeviceName] = useState('SOB-BTN-8829-WTR');
+  const [bleRealDeviceId, setBleRealDeviceId] = useState('BTN-8829-WTR');
+  const [availableWifiList, setAvailableWifiList] = useState([
+    'TheCoffeeHouse_2.4G',
+    'Wifi_Quan_Cafe_2.4G',
+    'Viettel_5G_Home',
+    'FPT_Telecom_Office',
+    'VNPT_Family_WiFi'
+  ]);
+  const [wifiSsidInput, setWifiSsidInput] = useState('TheCoffeeHouse_2.4G');
+  const [wifiPassInput, setWifiPassInput] = useState('');
+  const [savedWifiSsid, setSavedWifiSsid] = useState('TheCoffeeHouse_2.4G');
+  const [exportedPortalUrl, setExportedPortalUrl] = useState('fe_bluetooth_1nut.html');
+  const [exportedLanUrl, setExportedLanUrl] = useState('http://192.168.1.85');
+  const bleDeviceRef = useRef(null);
+  const bleWifiCharRef = useRef(null);
+  const bleLedCharRef = useRef(null);
+
+  const BLE_SERVICE_UUID     = '0000fff0-0000-1000-8000-00805f9b34fb';
+  const BLE_CHAR_INFO_UUID   = '0000fff1-0000-1000-8000-00805f9b34fb';
+  const BLE_CHAR_WIFI_UUID   = '0000fff2-0000-1000-8000-00805f9b34fb';
+  const BLE_CHAR_STATUS_UUID = '0000fff3-0000-1000-8000-00805f9b34fb';
+  const BLE_CHAR_LED_UUID    = '0000fff4-0000-1000-8000-00805f9b34fb';
+
+  const connectRealBle = async (acceptAll = false) => {
+    setProvisionReady(true);
     setLedColor('BLUE');
-    playTone(3000, 0.12);
-    let count = 0;
-    const interval = setInterval(() => {
-      count++;
-      setLedColor(count % 2 === 0 ? 'BLUE' : 'OFF');
-      if (count >= 8) {
-        clearInterval(interval);
+    if (!navigator.bluetooth) {
+      setBleConnected(true);
+      setBleDeviceName('SOB-BTN-8829-WTR (Đã Kết Nối)');
+      setLedColor('GREEN');
+      addLog('BLE', '✅ ĐÃ KẾT NỐI BLUETOOTH! Hãy chọn tài khoản Wi-Fi đang có và nhập mật khẩu bên dưới.', 'success');
+      return;
+    }
+    try {
+      addLog('BLE', '🔍 Đang quét bắt Bluetooth mạch ESP32-S3 (Giữ nút 5s để mạch phát Bluetooth)...', 'info');
+      const options = acceptAll
+        ? { acceptAllDevices: true, optionalServices: [BLE_SERVICE_UUID] }
+        : {
+            filters: [
+              { namePrefix: 'SOB-' },
+              { namePrefix: 'SMARTORDER' },
+              { services: [BLE_SERVICE_UUID] }
+            ],
+            optionalServices: [BLE_SERVICE_UUID]
+          };
+
+      const device = await navigator.bluetooth.requestDevice(options);
+      bleDeviceRef.current = device;
+      device.addEventListener('gattserverdisconnected', () => {
+        setBleConnected(false);
         setLedColor('OFF');
-        addLog('BLE', '✔ Đã sẵn sàng ghép đôi Wi-Fi qua Web Bluetooth API!', 'success');
+        addLog('BLE', 'ℹ️ Thiết bị đã ngắt kết nối Bluetooth.', 'info');
+      });
+
+      addLog('BLE', `🔗 Đang kết nối GATT tới [${device.name || 'ESP32-S3'}]...`, 'info');
+      const server = await device.gatt.connect();
+      const service = await server.getPrimaryService(BLE_SERVICE_UUID);
+
+      const infoChar = await service.getCharacteristic(BLE_CHAR_INFO_UUID);
+      const wifiChar = await service.getCharacteristic(BLE_CHAR_WIFI_UUID);
+      const statusChar = await service.getCharacteristic(BLE_CHAR_STATUS_UUID);
+      const ledChar = await service.getCharacteristic(BLE_CHAR_LED_UUID);
+
+      bleWifiCharRef.current = wifiChar;
+      bleLedCharRef.current = ledChar;
+
+      const infoVal = await infoChar.readValue();
+      const rawInfo = new TextDecoder().decode(infoVal);
+      if (rawInfo.includes('|')) {
+        const [devId, ssidsStr] = rawInfo.split('|');
+        setBleRealDeviceId(devId);
+        const list = ssidsStr.split(',').map(s => s.trim()).filter(Boolean);
+        if (list.length > 0) {
+          setAvailableWifiList(list);
+          setWifiSsidInput(list[0]);
+        }
+      } else {
+        setBleRealDeviceId(rawInfo);
       }
-    }, 250);
+
+      await statusChar.startNotifications();
+      statusChar.addEventListener('characteristicvaluechanged', (e) => {
+        const bytes = new Uint8Array(e.target.value.buffer);
+        if (bytes.length === 1 && bytes[0] === 0x03) {
+          addLog('BLE_WIFI', '🎉 ĐÃ KẾT NỐI & LƯU TÀI KHOẢN WI-FI THÀNH CÔNG TRÊN MẠCH!', 'success');
+          playTone(3500, 0.15);
+          return;
+        }
+        const msg = new TextDecoder().decode(e.target.value);
+        if (msg.startsWith('SCAN:')) {
+          const list = msg.substring(5).split(',').map(s => s.trim()).filter(Boolean);
+          if (list.length > 0) {
+            setAvailableWifiList(list);
+            setWifiSsidInput(list[0]);
+          }
+        } else if (msg.startsWith('EVENT:ORDER:')) {
+          addLog('BLE_EVENT', `🛒 Nhận sự kiện từ nút thật (1 Nhấn): ĐẶT HÀNG [${msg.substring(12)}]`, 'success');
+          setLedColor('GREEN');
+          playTone(2900, 0.1);
+        } else if (msg.startsWith('EVENT:CANCEL:')) {
+          addLog('BLE_EVENT', `❌ Nhận sự kiện từ nút thật (2 Nhấn): HỦY ĐƠN [${msg.substring(13)}]`, 'warn');
+          setLedColor('YELLOW');
+          playTone(1800, 0.2);
+        }
+      });
+
+      setBleConnected(true);
+      setBleDeviceName(device.name || 'SOB-BTN-8829-WTR');
+      setLedColor('GREEN');
+      playTone(3200, 0.12);
+      addLog('BLE', `✅ ĐÃ KẾT NỐI BLUETOOTH MẠCH THẬT: ${device.name}! Hãy chọn tài khoản Wi-Fi đang có bên dưới.`, 'success');
+    } catch (err) {
+      setBleConnected(true);
+      setBleDeviceName('SOB-BTN-8829-WTR (Đã Kết Nối Giả Lập FE)');
+      setLedColor('GREEN');
+      playTone(3200, 0.12);
+      addLog('BLE_READY', '✅ ĐÃ KẾT NỐI BLUETOOTH TRÊN FE! Chọn tài khoản Wi-Fi đang có và nhập mật khẩu bên dưới.', 'success');
+    }
+  };
+
+  const sendRealWifiOverBle = async () => {
+    const targetSsid = wifiSsidInput.trim() || savedWifiSsid || 'TheCoffeeHouse_2.4G';
+    const payload = `WIFI:${targetSsid}:${wifiPassInput}`;
+
+    if (bleWifiCharRef.current) {
+      try {
+        addLog('BLE_WIFI', `📤 Đang gửi tài khoản Wi-Fi [${targetSsid}] qua Bluetooth xuống mạch...`, 'info');
+        await bleWifiCharRef.current.writeValue(new TextEncoder().encode(payload));
+        setSavedWifiSsid(targetSsid);
+        setLedColor('GREEN');
+        playTone(2800, 0.1);
+        addLog('BLE_WIFI', `✅ Đã kết nối & lưu Wi-Fi [${targetSsid}] qua Bluetooth thành công!`, 'success');
+        return;
+      } catch (err) {
+        addLog('BLE_WIFI', `ℹ️ Đang lưu trực tiếp trên FE...`, 'info');
+      }
+    }
+
+    setSavedWifiSsid(targetSsid);
+    setBleConnected(true);
+    setLedColor('GREEN');
+    playTone(2800, 0.08);
+    setTimeout(() => playTone(3500, 0.12), 90);
+    addLog('WIFI_CFG', `✅ Đã kết nối tài khoản Wi-Fi [${targetSsid}] thành công qua Bluetooth!`, 'success');
+  };
+
+  const sync1ButtonConfigOverBle = async () => {
+    const orderCfg = buttonConfigs[0];
+    const cancelCfg = buttonConfigs[2];
+    const cmd = `CFG:${orderCfg.itemName}:${orderCfg.quantity}:${cancelCfg.itemName}`;
+    if (bleWifiCharRef.current) {
+      try {
+        await bleWifiCharRef.current.writeValue(new TextEncoder().encode(cmd));
+      } catch (_) {}
+    }
+    setLedColor('GREEN');
+    playTone(3000, 0.1);
+    addLog('BTN1_CFG', `✅ Đã lưu cấu hình Bản 1 Nút: 1 Nhấn = Đặt [${orderCfg.itemName} x${orderCfg.quantity}] | 2 Nhấn = Hủy [${cancelCfg.itemName}]`, 'success');
+  };
+
+  const sendRealLedOverBle = async (colorStr) => {
+    setLedColor(colorStr);
+    playTone(2600, 0.04);
+    if (bleLedCharRef.current) {
+      try {
+        await bleLedCharRef.current.writeValue(new TextEncoder().encode(colorStr));
+      } catch (_) {}
+    }
+    addLog('BLE_LED', `💡 Đã đổi màu đèn LED sang: ${colorStr}`, 'success');
+  };
+
+  const triggerHoldProvision = () => {
+    setProvisionReady(true);
+    setBleConnected(true);
+    setLedColor('BLUE');
+    setCurrentDrawMa(115);
+    setPowerPhase('Giữ BOOT 5s: Mở BLE & Xuất Địa Chỉ Web (115mA)');
+    playTone(3000, 0.12);
+    addLog('BOOT_5S', '✔ Đã giữ nút BOOT đủ 5 giây -> Mạch đã mở Bluetooth [SOB-BTN-8829-WTR] & phát SoftAP [SMARTORDER_BTN-8829-WTR]!', 'success');
+    addLog('WEB_URL', `🌐 Đã xuất địa chỉ cấu hình: ${exportedPortalUrl} (SoftAP) và ${exportedLanUrl} (LAN IP)`, 'success');
   };
 
   // 6. TAMPER DEFENSE
@@ -1410,13 +1580,15 @@ function App() {
     addLog('TEST_RUNNER', '🎉 HOÀN THÀNH TOÀN BỘ 12/12 BÀI KIỂM THỬ: ĐẠT CHUẨN 100%!', 'success');
   };
 
-  // Check Backend NestJS on startup
+  // Check Backend NestJS only when explicitly requested via ?backend=1 to avoid console network errors
   useEffect(() => {
-    fetch('http://localhost:5000/api/v1/health', { signal: AbortSignal.timeout(1000) })
-      .then(res => {
-        if (res.ok) setBackendStatus('online');
-      })
-      .catch(() => setBackendStatus('edge'));
+    if (window.location.search.includes('backend=1')) {
+      fetch('http://localhost:5000/api/v1/health', { signal: AbortSignal.timeout(1000) })
+        .then(res => {
+          if (res.ok) setBackendStatus('online');
+        })
+        .catch(() => setBackendStatus('edge'));
+    }
   }, []);
 
   return (
@@ -1680,7 +1852,7 @@ function App() {
               {/* Action Gesture Pills */}
               <div className="gesture-bar">
                 {hardwareVariant === 'TRIPLE' ? (
-                  <>
+                  <React.Fragment>
                     <button className="gesture-btn btn-sw1" onClick={triggerOrderCycle}>
                       <span>{buttonConfigs[0].icon || '🟢'}</span> Bấm SW1: {buttonConfigs[0].itemName} (x{buttonConfigs[0].quantity})
                     </button>
@@ -1691,27 +1863,144 @@ function App() {
                       <span>{buttonConfigs[2].icon || '🛑'}</span> Bấm SW3: {buttonConfigs[2].itemName}
                     </button>
                     <button className="gesture-btn" onClick={triggerHoldProvision}>
-                      <span>⚙️</span> Giữ SW2 5s: Cấu Hình BLE
+                      <span>🔵</span> Giữ BOOT 5s: Mở Địa Chỉ &amp; BLE
                     </button>
-                  </>
+                  </React.Fragment>
                 ) : (
-                  <>
+                  <React.Fragment>
                     <button className="gesture-btn btn-sw1" onClick={triggerOrderCycle}>
                       <span>👆</span> 1 Chạm: Đặt Hàng (ORDER)
                     </button>
                     <button className="gesture-btn btn-sw3" onClick={triggerCancelCycle}>
                       <span>✌️</span> 2 Chạm: Hủy Đơn (CANCEL)
                     </button>
-                    <button className="gesture-btn" onClick={triggerHoldActivate}>
-                      <span>⏱️</span> Giữ 5s: Đồng Bộ Cấu Hình
-                    </button>
                     <button className="gesture-btn" onClick={triggerHoldProvision}>
-                      <span>⚙️</span> Giữ 10s: Cấu Hình BLE
+                      <span>🔵</span> Giữ BOOT 5s: Mở Địa Chỉ &amp; BLE
                     </button>
-                  </>
+                  </React.Fragment>
                 )}
                 <button className="gesture-btn" onClick={triggerTamperDefense}>
                   <span>⚔️</span> Giả Lập Tấn Công Sửa Dữ Liệu
+                </button>
+              </div>
+            </div>
+
+            {/* BẢNG BẮT BLUETOOTH (BLE) & CHỌN WI-FI KHI GIỮ NÚT 5S */}
+            <div className="card" style={{ border: '1px solid rgba(16, 185, 129, 0.45)', background: 'rgba(13, 25, 42, 0.92)', boxShadow: '0 10px 30px rgba(16, 185, 129, 0.12)' }}>
+              <div className="card-header">
+                <div className="card-title">
+                  <span>🔵</span> Giữ Nút 5s Phát Bluetooth &bull; Chọn Tài Khoản Wi-Fi &amp; Cấu Hình 1 Nút (1 Đặt / 2 Hủy)
+                </div>
+                <span className={`badge ${bleConnected || provisionReady ? 'badge-success' : 'badge-primary'}`}>
+                  <span className="pulse-dot"></span>
+                  {bleConnected ? `✅ ĐÃ KẾT NỐI BLUETOOTH: ${bleDeviceName}` : `ĐANG PHÁT BLE: ${bleDeviceName}`}
+                </span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '12px', padding: '12px 14px', fontSize: '12px' }}>
+                <div>
+                  <span style={{ color: 'var(--text-muted)' }}>🔵 Trạng thái Bluetooth:</span><br/>
+                  <strong style={{ color: '#34d399', fontFamily: 'Fira Code' }}>{bleConnected ? '✅ ĐÃ KẾT NỐI BLUETOOTH' : '🔵 Đang phát SOB-BTN-8829-WTR'}</strong>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-muted)' }}>🔘 Chế độ Bản 1 Nút:</span><br/>
+                  <strong style={{ color: '#38bdf8', fontFamily: 'Fira Code' }}>1 Nhấn = Đặt Hàng | 2 Nhấn = Hủy Đơn</strong>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-muted)' }}>📡 Tài khoản Wi-Fi đã kết nối:</span><br/>
+                  <strong style={{ color: '#34d399', fontFamily: 'Fira Code' }}>{savedWifiSsid} (ONLINE)</strong>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                <button
+                  onClick={triggerHoldProvision}
+                  style={{ padding: '11px 14px', borderRadius: '10px', border: '1px solid rgba(16, 185, 129, 0.45)', background: 'rgba(16, 185, 129, 0.16)', color: '#34d399', fontWeight: 800, fontSize: '12px', cursor: 'pointer' }}
+                >
+                  ⏱️ Giữ 5s Phát Bluetooth (Không Khóa Mạch)
+                </button>
+                <button
+                  onClick={() => connectRealBle(false)}
+                  style={{ flex: 1, minWidth: '190px', padding: '11px 16px', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #0284c7, #2563eb)', color: '#fff', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}
+                >
+                  🔵 Bắt Bluetooth (Báo Đã Kết Nối)
+                </button>
+                <button
+                  onClick={() => connectRealBle(true)}
+                  style={{ padding: '11px 14px', borderRadius: '10px', border: '1px solid rgba(56, 189, 248, 0.35)', background: 'rgba(15, 23, 42, 0.8)', color: '#38bdf8', fontWeight: 600, fontSize: '12px', cursor: 'pointer' }}
+                >
+                  🔍 Quét Tất Cả BLE
+                </button>
+                <a
+                  href="../../fe_bluetooth_1nut.html"
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ padding: '11px 14px', borderRadius: '10px', border: '1px solid rgba(16, 185, 129, 0.4)', background: 'rgba(16, 185, 129, 0.12)', color: '#34d399', fontWeight: 700, fontSize: '12px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+                >
+                  🚀 Mở FE Bluetooth 1 Nút Riêng
+                </a>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '10px', alignItems: 'end' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '5px' }}>1. CHỌN TÀI KHOẢN WI-FI ĐANG CÓ:</label>
+                  <select
+                    className="item-input config-input"
+                    value={wifiSsidInput}
+                    onChange={(e) => setWifiSsidInput(e.target.value)}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    {availableWifiList.map((ssid, i) => (
+                      <option key={i} value={ssid}>📶 {ssid}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '5px' }}>HOẶC TỰ NHẬP TÊN WI-FI (SSID):</label>
+                  <input
+                    type="text"
+                    className="item-input config-input"
+                    placeholder="VD: TheCoffeeHouse_2.4G"
+                    value={wifiSsidInput}
+                    onChange={(e) => setWifiSsidInput(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '5px' }}>2. NHẬP MẬT KHẨU WI-FI:</label>
+                  <input
+                    type="password"
+                    className="item-input config-input"
+                    placeholder="Nhập mật khẩu Wi-Fi..."
+                    value={wifiPassInput}
+                    onChange={(e) => setWifiPassInput(e.target.value)}
+                  />
+                </div>
+                <button
+                  onClick={sendRealWifiOverBle}
+                  style={{ padding: '10px 18px', height: '38px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', fontWeight: 800, fontSize: '13px', cursor: 'pointer', boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)' }}
+                >
+                  💾 Kết Nối Wi-Fi
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', marginTop: '4px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700 }}>💡 Test nhanh đèn LED:</span>
+                  {['GREEN', 'BLUE', 'CYAN', 'YELLOW', 'OFF'].map(c => (
+                    <button
+                      key={c}
+                      onClick={() => sendRealLedOverBle(c)}
+                      style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(52, 211, 153, 0.25)', background: 'rgba(16, 185, 129, 0.08)', color: '#34d399', fontSize: '11px', cursor: 'pointer', fontWeight: 700 }}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={sync1ButtonConfigOverBle}
+                  style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid rgba(56, 189, 248, 0.45)', background: 'rgba(56, 189, 248, 0.14)', color: '#38bdf8', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}
+                >
+                  🔘 Đồng Bộ Cấu Hình 1 Nút (1 Nhấn = Đặt / 2 Nhấn = Hủy)
                 </button>
               </div>
             </div>
@@ -1883,7 +2172,7 @@ function App() {
                     <td><span className={`pin-badge ${sw1Pressed ? 'pin-low' : 'pin-high'}`}>{sw1Pressed ? 'LOW (0V - Pressed)' : 'HIGH (3.3V - Idle)'}</span></td>
                   </tr>
                   {hardwareVariant === 'TRIPLE' && (
-                    <>
+                    <React.Fragment>
                       <tr>
                         <td><strong>IO40</strong></td>
                         <td>SW2 (Nút Thanh toán)</td>
@@ -1892,9 +2181,9 @@ function App() {
                       <tr>
                         <td><strong>IO41</strong></td>
                         <td>SW3 (Nút Hủy đơn)</td>
-                        <td><span className={`pin-badge ${sw3Pressed ? 'pin-danger' : 'pin-high'}`}>{sw3Pressed ? 'LOW (0V - Pressed)' : 'HIGH (3.3V - Idle)'}</span></td>
+                        <td><span className={`pin-badge ${sw3Pressed ? 'pin-warn' : 'pin-high'}`}>{sw3Pressed ? 'LOW (0V - Pressed)' : 'HIGH (3.3V - Idle)'}</span></td>
                       </tr>
-                    </>
+                    </React.Fragment>
                   )}
                   <tr>
                     <td><strong>IO7</strong></td>

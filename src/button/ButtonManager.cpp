@@ -30,6 +30,7 @@ ButtonConfig ButtonManager::getButtonConfig(uint8_t buttonIndex) {
 void ButtonManager::init(uint8_t variant) {
   s_variant = variant;
   pinMode(PIN_BUTTON_SW1, INPUT_PULLUP);
+  pinMode(GPIO_NUM_0, INPUT_PULLUP); // Nút BOOT trên ESP32-S3 luôn được kéo lên
   if (s_variant == HARDWARE_VARIANT_TRIPLE_BUTTON) {
     pinMode(PIN_BUTTON_SW2, INPUT_PULLUP);
     pinMode(PIN_BUTTON_SW3, INPUT_PULLUP);
@@ -51,6 +52,7 @@ bool ButtonManager::isPressed(gpio_num_t pin) {
 
 bool ButtonManager::isPressed() {
   if (digitalRead(PIN_BUTTON_SW1) == LOW) return true;
+  if (digitalRead(GPIO_NUM_0) == LOW) return true;
   if (s_variant == HARDWARE_VARIANT_TRIPLE_BUTTON) {
     if (digitalRead(PIN_BUTTON_SW2) == LOW) return true;
     if (digitalRead(PIN_BUTTON_SW3) == LOW) return true;
@@ -67,41 +69,41 @@ ButtonGesture ButtonManager::detectGesture(bool wokenFromSleep) {
 }
 
 // =========================================================================
-// BẢN 1 NÚT (SINGLE-BUTTON MULTI-GESTURE TRÊN SW1)
+// BẢN 1 NÚT (SINGLE-BUTTON MULTI-GESTURE TRÊN SW1 / NÚT BOOT GPIO 0)
 // =========================================================================
 ButtonGesture ButtonManager::detectSingleButtonGesture(bool wokenFromSleep) {
-  bool initiallyLow = (digitalRead(PIN_BUTTON_SW1) == LOW);
+  bool initiallyLow = (digitalRead(PIN_BUTTON_SW1) == LOW || digitalRead(GPIO_NUM_0) == LOW);
 
   // Nếu không thức dậy từ sleep và nút không được nhấn -> Không có thao tác
   if (!initiallyLow && !wokenFromSleep) {
     return GESTURE_NONE;
   }
 
+  delay(DEBOUNCE_MS);
+  initiallyLow = (digitalRead(PIN_BUTTON_SW1) == LOW || digitalRead(GPIO_NUM_0) == LOW);
+  if (!initiallyLow && !wokenFromSleep) {
+    return GESTURE_NONE;
+  }
+
   unsigned long pressStart = millis();
+  unsigned long lastSecPrint = 0;
 
   // 1. Nếu nút đang được đè giữ (LOW): Đo chính xác thời lượng giữ
   if (initiallyLow) {
-    while (digitalRead(PIN_BUTTON_SW1) == LOW) {
+    while (digitalRead(PIN_BUTTON_SW1) == LOW || digitalRead(GPIO_NUM_0) == LOW) {
       unsigned long heldMs = millis() - pressStart;
 
-      // Giữ >= 15 giây -> Khôi phục cài đặt gốc
-      if (heldMs >= HOLD_15S_FACTORY_RESET_MS) {
-        while (digitalRead(PIN_BUTTON_SW1) == LOW) delay(10);
-        return GESTURE_HOLD_15S_FACTORY_RESET;
+      if (heldMs >= 1000 && (heldMs / 1000) > lastSecPrint) {
+        lastSecPrint = heldMs / 1000;
+        Serial.printf("[BOOT] ⏱️ Đang giữ nút BOOT/SW1: %lu giây / 5 giây...\n", lastSecPrint);
+      }
+
+      // ⚡ Giữ đủ 5 giây -> Kích hoạt NGAY chế độ mở địa chỉ Web & Bluetooth (BLE) cấu hình Wi-Fi!
+      if (heldMs >= 5000) {
+        Serial.println("[BOOT] ✅ ĐÃ ĐỦ 5 GIÂY! Mở ngay địa chỉ Web & Bluetooth cấu hình Wi-Fi...");
+        return GESTURE_HOLD_10S_PROVISION;
       }
       delay(10);
-    }
-
-    unsigned long totalHeldMs = millis() - pressStart;
-
-    // Giữ từ 10s đến 15s -> Cấu hình Wi-Fi BLE 5 & SoftAP
-    if (totalHeldMs >= HOLD_10S_PROVISION_MS) {
-      return GESTURE_HOLD_10S_PROVISION;
-    }
-
-    // Giữ từ 5s đến 10s -> Kích hoạt / Đồng bộ tham số cấu hình
-    if (totalHeldMs >= HOLD_5S_ACTIVATE_MS) {
-      return GESTURE_HOLD_5S_ACTIVATE;
     }
   }
 
@@ -111,12 +113,12 @@ ButtonGesture ButtonManager::detectSingleButtonGesture(bool wokenFromSleep) {
   const unsigned long MULTI_CLICK_WINDOW_MS = 450;
 
   while (millis() - lastReleaseTime < MULTI_CLICK_WINDOW_MS) {
-    if (digitalRead(PIN_BUTTON_SW1) == LOW) {
+    if (digitalRead(PIN_BUTTON_SW1) == LOW || digitalRead(GPIO_NUM_0) == LOW) {
       delay(DEBOUNCE_MS);
-      if (digitalRead(PIN_BUTTON_SW1) == LOW) {
+      if (digitalRead(PIN_BUTTON_SW1) == LOW || digitalRead(GPIO_NUM_0) == LOW) {
         clickCount++;
         // Chờ nhả phím
-        while (digitalRead(PIN_BUTTON_SW1) == LOW) {
+        while (digitalRead(PIN_BUTTON_SW1) == LOW || digitalRead(GPIO_NUM_0) == LOW) {
           delay(10);
         }
         lastReleaseTime = millis();
@@ -138,23 +140,26 @@ ButtonGesture ButtonManager::detectSingleButtonGesture(bool wokenFromSleep) {
 }
 
 // =========================================================================
-// BẢN 3 NÚT (TRIPLE-BUTTON DEDICATED BUTTONS: SW1, SW2, SW3)
+// BẢN 3 NÚT (TRIPLE-BUTTON DEDICATED BUTTONS: SW1, SW2, SW3 + NÚT BOOT GPIO 0)
 // =========================================================================
 ButtonGesture ButtonManager::detectTripleButtonGesture(bool wokenFromSleep) {
+  bool bootBtn = (digitalRead(GPIO_NUM_0) == LOW);
   bool sw1 = (digitalRead(PIN_BUTTON_SW1) == LOW);
   bool sw2 = (digitalRead(PIN_BUTTON_SW2) == LOW);
   bool sw3 = (digitalRead(PIN_BUTTON_SW3) == LOW);
 
-  if (!sw1 && !sw2 && !sw3 && !wokenFromSleep) {
+  if (!bootBtn && !sw1 && !sw2 && !sw3 && !wokenFromSleep) {
     return GESTURE_NONE;
   }
 
   delay(DEBOUNCE_MS);
+  bootBtn = (digitalRead(GPIO_NUM_0) == LOW);
   sw1 = (digitalRead(PIN_BUTTON_SW1) == LOW);
   sw2 = (digitalRead(PIN_BUTTON_SW2) == LOW);
   sw3 = (digitalRead(PIN_BUTTON_SW3) == LOW);
 
   unsigned long pressStart = millis();
+  unsigned long lastSecPrint = 0;
 
   // COMBO: Giữ đồng thời SW1 + SW3 trong 5s -> Factory Reset
   if (sw1 && sw3) {
@@ -167,16 +172,16 @@ ButtonGesture ButtonManager::detectTripleButtonGesture(bool wokenFromSleep) {
     }
   }
 
-  // NÚT SW1: ĐẶT HÀNG (ORDER)
-  if (sw1) {
-    while (digitalRead(PIN_BUTTON_SW1) == LOW) {
+  // NÚT BOOT (GPIO 0) hoặc NÚT SW1: Giữ 5s -> Mở địa chỉ Web & Bluetooth cấu hình Wi-Fi
+  if (bootBtn || sw1) {
+    while (digitalRead(GPIO_NUM_0) == LOW || digitalRead(PIN_BUTTON_SW1) == LOW) {
       unsigned long heldMs = millis() - pressStart;
-      if (heldMs >= HOLD_15S_FACTORY_RESET_MS) {
-        while (digitalRead(PIN_BUTTON_SW1) == LOW) delay(10);
-        return GESTURE_HOLD_15S_FACTORY_RESET;
+      if (heldMs >= 1000 && (heldMs / 1000) > lastSecPrint) {
+        lastSecPrint = heldMs / 1000;
+        Serial.printf("[BOOT] ⏱️ Đang giữ nút BOOT/SW1: %lu giây / 5 giây...\n", lastSecPrint);
       }
-      if (heldMs >= HOLD_10S_PROVISION_MS) {
-        while (digitalRead(PIN_BUTTON_SW1) == LOW) delay(10);
+      if (heldMs >= 5000) {
+        Serial.println("[BOOT] ✅ ĐÃ ĐỦ 5 GIÂY! Mở ngay địa chỉ Web & Bluetooth cấu hình Wi-Fi...");
         return GESTURE_HOLD_10S_PROVISION;
       }
       delay(10);

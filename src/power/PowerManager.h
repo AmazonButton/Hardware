@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #include <esp_sleep.h>
-#include "config.h"
+#include "../../include/config.h"
 #include "MAX17048.h"
 
 class PowerManager {

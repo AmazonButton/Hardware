@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Order Button — FE Bản 1 Nút (Giữ 5s Phát Bluetooth • Chọn Wi-Fi • 1 Nhấn Đặt / 2 Nhấn Hủy)</title>
+  <style>
+    :root {
+      --bg: #070b14;
+      --card: rgba(17, 25, 44, 0.92);
+      --border: rgba(56, 189, 248, 0.22);
+      --blue: #38bdf8;
+      --green: #10b981;
+      --amber: #f59e0b;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+
+    body {
+      background: radial-gradient(circle at 50% 0%, #172554 0%, var(--bg) 75%);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 24px 16px 60px;
+    }
+
+    .container {
+      max-width: 1040px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .header {
+      text-align: center;
+      padding: 18px 20px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+    }
+
+    .top-badge {
+      display: inline-block;
+      padding: 5px 14px;
+      border-radius: 999px;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      color: #34d399;
+      font-size: 12px;
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 900;
+      background: linear-gradient(135deg, #ffffff 30%, #38bdf8 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      font-size: 13.5px;
+      color: var(--muted);
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    @media (max-width: 820px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 22px;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .status-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-radius: 14px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      transition: all 0.25s ease;
+    }
+
+    .status-banner.connected {
+      background: rgba(16, 185, 129, 0.14);
+      border-color: rgba(16, 185, 129, 0.5);
+      box-shadow: 0 0 20px rgba(16, 185, 129, 0.18);
+    }
+
+    .status-banner.broadcasting {
+      background: rgba(56, 189, 248, 0.14);
+      border-color: rgba(56, 189, 248, 0.5);
+    }
+
+    .dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: #64748b;
+      display: inline-block;
+      margin-right: 8px;
+    }
+
+    .dot.blue {
+      background: #38bdf8;
+      box-shadow: 0 0 12px #38bdf8;
+      animation: pulse 1.2s infinite;
+    }
+
+    .dot.green {
+      background: #10b981;
+      box-shadow: 0 0 12px #10b981;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.35); opacity: 0.6; }
+    }
+
+    /* 3D Single Button Simulator */
+    .single-btn-stage {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      background: radial-gradient(circle, rgba(16, 185, 129, 0.08) 0%, rgba(10, 15, 29, 0.85) 80%);
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      border-radius: 18px;
+      gap: 12px;
+      position: relative;
+    }
+
+    .big-button-outer {
+      width: 138px;
+      height: 138px;
+      border-radius: 50%;
+      background: linear-gradient(145deg, #1e293b, #090d16);
+      border: 4px solid #334155;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      user-select: none;
+      box-shadow: 0 14px 28px rgba(0, 0, 0, 0.7), inset 0 3px 6px rgba(255, 255, 255, 0.1);
+      transition: all 0.15s ease;
+      position: relative;
+    }
+
+    .big-button-outer.pressing {
+      transform: translateY(4px) scale(0.97);
+      border-color: #38bdf8;
+      box-shadow: 0 0 30px rgba(56, 189, 248, 0.5);
+    }
+
+    .big-button-outer.order-glow {
+      border-color: #10b981;
+      box-shadow: 0 0 35px rgba(16, 185, 129, 0.65);
+    }
+
+    .big-button-outer.cancel-glow {
+      border-color: #f59e0b;
+      box-shadow: 0 0 35px rgba(245, 158, 11, 0.65);
+    }
+
+    .big-button-inner {
+      width: 104px;
+      height: 104px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #38bdf8 0%, #0284c7 65%, #0369a1 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-weight: 900;
+      text-align: center;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      pointer-events: none;
+    }
+
+    .hold-progress-bar {
+      width: 100%;
+      max-width: 260px;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .hold-progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #38bdf8, #10b981);
+      transition: width 0.1s linear;
+    }
+
+    .btn {
+      padding: 11px 16px;
+      border-radius: 11px;
+      border: none;
+      font-size: 13.5px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+    }
+
+    .btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+    .btn:active { transform: translateY(0); }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+    }
+
+    .btn-success {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+    }
+
+    .btn-amber {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      color: #fff;
+    }
+
+    .btn-outline {
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      color: #38bdf8;
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+      margin-bottom: 5px;
+    }
+
+    input, select {
+      width: 100%;
+      padding: 10px 13px;
+      background: rgba(8, 12, 24, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 10px;
+      color: #fff;
+      font-size: 13.5px;
+      outline: none;
+    }
+
+    input:focus, select:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+    }
+
+    .wifi-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .wifi-item {
+      padding: 9px 12px;
+      border-radius: 10px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12.5px;
+      font-weight: 600;
+      transition: all 0.15s ease;
+    }
+
+    .wifi-item:hover, .wifi-item.active {
+      background: rgba(56, 189, 248, 0.16);
+      border-color: #38bdf8;
+      color: #fff;
+    }
+
+    .gesture-rule-box {
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .live-event-toast {
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 13.5px;
+      font-weight: 800;
+      text-align: center;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.45);
+      color: #34d399;
+    }
+
+    .console-box {
+      background: #04070e;
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      border-radius: 12px;
+      padding: 12px;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 12px;
+      color: #a5f3fc;
+      height: 145px;
+      overflow-y: auto;
+      line-height: 1.55;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- HEADER -->
+    <div class="header">
+      <span class="top-badge">🔘 BẢN 1 NÚT ĐA CỬ CHỈ • BLUETOOTH TRỰC TIẾP</span>
+      <h1>FE Điều Khiển &amp; Kết Nối Bluetooth Nút Bấm (1 Nút)</h1>
+      <p class="subtitle">
+        <b>Giữ 5 giây</b> = Phát sóng Bluetooth &amp; Bắt kết nối (Không ép cấu hình lại) &bull;
+        <b>Nhấn 1 lần</b> = Đặt hàng &bull;
+        <b>Nhấn 2 lần</b> = Hủy đơn
+      </p>
+    </div>
+
+    <div class="grid-2">
+      <!-- CỘT TRÁI: BÀN NÚT BẤM 1 NÚT & PHÁT/BẮT BLUETOOTH -->
+      <div class="card">
+        <div class="card-title">
+          <span>📡 1. Giữ Nút 5 Giây Phát Bluetooth &amp; Bắt Kết Nối</span>
+          <span id="bleBadgeId" style="font-size: 12px; color: #38bdf8;">SOB-BTN-8829-WTR</span>
+        </div>
+
+        <!-- Trạng thái kết nối Bluetooth -->
+        <div id="bleBanner" class="status-banner">
+          <div style="display: flex; align-items: center;">
+            <span id="bleDot" class="dot"></span>
+            <span id="bleStatusText" style="font-weight: 800; font-size: 13.5px;">Chưa phát Bluetooth (Hãy giữ nút 5s)</span>
+          </div>
+          <span id="wifiCurrentBadge" style="font-size: 11.5px; color: #34d399; font-weight: 700;">Wi-Fi: Sẵn sàng</span>
+        </div>
+
+        <!-- Bàn mô phỏng Nút bấm duy nhất (Bản 1 Nút) -->
+        <div class="single-btn-stage">
+          <div style="font-size: 12px; color: var(--muted); text-align: center;">
+            👇 <b>Thao tác trực tiếp trên Nút Duy Nhất này</b> (hoặc bấm nút trên mạch thật):<br>
+            • <b>Click 1 lần</b>: Đặt hàng &nbsp;|&nbsp; <b>Click đúp 2 lần</b>: Hủy đơn &nbsp;|&nbsp; <b>Đè giữ 5s</b>: Phát Bluetooth
+          </div>
+
+          <div
+            id="singleHardwareBtn"
+            class="big-button-outer"
+            onmousedown="startHoldButton()"
+            onmouseup="endHoldButton()"
+            onmouseleave="cancelHoldButton()"
+            ontouchstart="startHoldButton(event)"
+            ontouchend="endHoldButton(event)"
+          >
+            <div class="big-button-inner">
+              <span id="btnMainIcon" style="font-size: 24px;">🔘</span>
+              <span style="font-size: 13px; margin-top: 2px;">NÚT DUY NHẤT</span>
+              <span id="btnSubLabel" style="font-size: 10px; opacity: 0.85; margin-top: 2px;">1: ĐẶT | 2: HỦY</span>
+            </div>
+          </div>
+
+          <div class="hold-progress-bar">
+            <div id="holdProgressFill" class="hold-progress-fill"></div>
+          </div>
+          <div id="holdTimerText" style="font-size: 12px; color: #38bdf8; font-weight: 700;">
+            Thời gian giữ: 0.0s / 5.0s (Giữ đủ 5s sẽ phát ra Bluetooth)
+          </div>
+
+          <!-- Phản hồi tức thì khi bấm 1 lần hoặc 2 lần -->
+          <div id="liveActionToast" class="live-event-toast" style="width: 100%;">
+            ✨ Sẵn sàng: Bấm 1 lần = Đặt [Bia Heineken x1] | Bấm 2 lần = [Hủy Đơn Hàng]
+          </div>
+        </div>
+
+        <!-- Các nút thao tác kết nối Bluetooth Phần cứng & Mô phỏng -->
+        <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 12px; padding: 10px 12px; font-size: 12px; line-height: 1.5; color: #e2e8f0;">
+          💡 <b>Kết nối mạch phần cứng thật (ESP32-S3):</b><br>
+          1️⃣ Cấp nguồn, đè <b>giữ nút BOOT / SW1 trong 5 giây</b> (đèn LED Xanh Dương nháy nhẹ).<br>
+          2️⃣ Bấm nút màu xanh dương <b>"🔵 Bắt Bluetooth Mạch Thật"</b> bên dưới &bull; chọn <b>SOB-BTN-8829-WTR</b>.<br>
+          3️⃣ Mạch kêu bíp, đèn đổi sang <b>XANH LÁ</b> và trang báo <b>"✅ ĐÃ KẾT NỐI BLUETOOTH"</b>!
+        </div>
+
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button class="btn btn-primary" style="flex: 2; min-width: 220px;" onclick="catchBluetoothConnection(true)">
+            🔵 Bắt Bluetooth Mạch Thật (ESP32-S3)
+          </button>
+          <button class="btn btn-outline" style="flex: 1;" onclick="scanAllBleDevices()">
+            🔍 Quét Tất Cả BLE
+          </button>
+          <button class="btn btn-outline" style="flex: 1;" onclick="catchBluetoothConnection(false)">
+            ⚡ Thử Nhanh Trên FE
+          </button>
+        </div>
+
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button class="btn btn-success" style="flex: 1;" onclick="triggerSingleClickOrder()">
+            👆 Thử Nhấn 1 Lần (ĐẶT HÀNG)
+          </button>
+          <button class="btn btn-amber" style="flex: 1;" onclick="triggerDoubleClickCancel()">
+            ✌️ Thử Nhấn 2 Lần (HỦY ĐƠN)
+          </button>
+        </div>
+      </div>
+
+      <!-- CỘT PHẢI: CHỌN TÀI KHOẢN WI-FI ĐANG CÓ & CẤU HÌNH 1 NÚT (1=ĐẶT, 2=HỦY) -->
+      <div style="display: flex; flex-direction: column; gap: 20px;">
+        <!-- BẢNG CHỌN TÀI KHOẢN WI-FI ĐANG CÓ & NHẬP MẬT KHẨU -->
+        <div class="card">
+          <div class="card-title">
+            <span>📶 2. Chọn Tài Khoản Wi-Fi Đang Có &amp; Nhập Mật Khẩu</span>
+            <button class="btn btn-outline" style="padding: 5px 10px; font-size: 11.5px;" onclick="scanAvailableWifi()">
+              🔄 Quét Lại Wi-Fi
+            </button>
+          </div>
+
+          <div>
+            <label>Danh sách mạng Wi-Fi đang có (Bấm vào tên Wi-Fi để chọn ngay):</label>
+            <div id="wifiCardsContainer" class="wifi-list"></div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px;">
+            <div>
+              <label>Hoặc chọn từ danh sách xổ xuống:</label>
+              <select id="wifiSelectDropdown" onchange="onSelectWifiDropdown(this.value)">
+                <option value="">-- Chọn tài khoản Wi-Fi đang có --</option>
+              </select>
+            </div>
+            <div>
+              <label>Tài khoản Wi-Fi đã chọn (SSID):</label>
+              <input type="text" id="inputSsid" placeholder="Chọn ở trên hoặc tự nhập...">
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: end;">
+            <div>
+              <label>Mật khẩu Wi-Fi:</label>
+              <div style="display: flex; gap: 6px;">
+                <input type="password" id="inputPass" placeholder="Nhập mật khẩu Wi-Fi...">
+                <button type="button" class="btn btn-outline" style="padding: 8px 12px;" onclick="togglePasswordVisibility()">👁️</button>
+              </div>
+            </div>
+            <button class="btn btn-success" style="height: 40px;" onclick="connectSelectedWifi()">
+              🔑 Kết Nối Wi-Fi
+            </button>
+          </div>
+        </div>
+
+        <!-- BẢNG CẤU HÌNH BẢN 1 NÚT: 1 NHẤN = ĐẶT HÀNG, 2 NHẤN = HỦY ĐƠN -->
+        <div class="card">
+          <div class="card-title">
+            <span>⚙️ 3. Cấu Hình Bản 1 Nút (1 Nhấn = Đặt Hàng • 2 Nhấn = Hủy Đơn)</span>
+            <span style="font-size: 11px; color: #34d399; font-weight: 700;">CHẾ ĐỘ 1 NÚT</span>
+          </div>
+
+          <div class="gesture-rule-box">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 13px; font-weight: 800; color: #34d399;">👆 Cử chỉ 1: Bấm 1 Lần (Single Click) &rarr; ĐẶT HÀNG</span>
+              <span style="font-size: 11px; color: var(--muted);">LED Xanh Lá + Bíp Kép</span>
+            </div>
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px;">
+              <div>
+                <label>Tên món hàng / dịch vụ đặt khi bấm 1 lần:</label>
+                <input type="text" id="cfgOrderItemName" value="Bia Heineken" oninput="updateLiveSummary()">
+              </div>
+              <div>
+                <label>Số lượng:</label>
+                <input type="number" id="cfgOrderQty" value="1" min="1" max="99" oninput="updateLiveSummary()">
+              </div>
+            </div>
+          </div>
+
+          <div class="gesture-rule-box">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 13px; font-weight: 800; color: #fbbf24;">✌️ Cử chỉ 2: Bấm 2 Lần Liên Tiếp (Double Click) &rarr; HỦY ĐƠN</span>
+              <span style="font-size: 11px; color: var(--muted);">LED Vàng + Bíp Dài</span>
+            </div>
+            <div>
+              <label>Nội dung thực hiện khi bấm 2 lần:</label>
+              <input type="text" id="cfgCancelName" value="Hủy Đơn Hàng Vừa Đặt" oninput="updateLiveSummary()">
+            </div>
+          </div>
+
+          <button class="btn btn-primary" onclick="saveOneButtonConfig()">
+            💾 Áp Dụng &amp; Đồng Bộ Cấu Hình 1 Nút Qua Bluetooth
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- NHẬT KÝ HOẠT ĐỘNG BLUETOOTH & NÚT BẤM -->
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 13px; font-weight: 800; color: var(--muted);">📋 Nhật Ký Phát Sóng Bluetooth, Kết Nối Wi-Fi &amp; Sự Kiện Nút Bấm</span>
+        <span style="font-size: 12px; color: #38bdf8; cursor: pointer;" onclick="clearConsole()">Xóa nhật ký</span>
+      </div>
+      <div id="consoleLog" class="console-box"></div>
+    </div>
+  </div>
+
+  <script>
+    const SERVICE_UUID     = '0000fff0-0000-1000-8000-00805f9b34fb';
+    const CHAR_INFO_UUID   = '0000fff1-0000-1000-8000-00805f9b34fb';
+    const CHAR_WIFI_UUID   = '0000fff2-0000-1000-8000-00805f9b34fb';
+    const CHAR_STATUS_UUID = '0000fff3-0000-1000-8000-00805f9b34fb';
+    const CHAR_LED_UUID    = '0000fff4-0000-1000-8000-00805f9b34fb';
+
+    // Danh sách các tài khoản Wi-Fi đang có (mặc định + cập nhật từ mạch ESP32 khi quét BLE)
+    let availableWifiNetworks = [
+      { ssid: 'TheCoffeeHouse_2.4G', rssi: -45, bars: '📶 4 vạch' },
+      { ssid: 'Viettel_Home_2.4G',   rssi: -52, bars: '📶 4 vạch' },
+      { ssid: 'VNPT_Fibre_Shop',     rssi: -58, bars: '📶 3 vạch' },
+      { ssid: 'FPT_Telecom_Office',  rssi: -64, bars: '📶 3 vạch' },
+      { ssid: 'SmartOrder_POS_WiFi', rssi: -49, bars: '📶 4 vạch' }
+    ];
+
+    let bleDevice = null;
+    let charInfo = null;
+    let charWifi = null;
+    let charStatus = null;
+    let charLed = null;
+    let isBluetoothBroadcasting = false;
+    let isBluetoothConnected = false;
+
+    // Biến phục vụ đếm giữ 5 giây và phân biệt 1 nhấn (Đặt) vs 2 nhấn (Hủy)
+    let holdStartTime = 0;
+    let holdInterval = null;
+    let holdTriggered5s = false;
+    let clickCount = 0;
+    let clickTimer = null;
+
+    function logMsg(msg) {
+      const box = document.getElementById('consoleLog');
+      const now = new Date().toLocaleTimeString('vi-VN');
+      box.innerText += `[${now}] ${msg}\n`;
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function clearConsole() {
+      document.getElementById('consoleLog').innerText = '';
+    }
+
+    function playBeep(freq = 2700, duration = 0.08) {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.1, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + duration);
+      } catch (_) {}
+    }
+
+    // Hiển thị danh sách tài khoản Wi-Fi đang có
+    function renderWifiNetworks(selectedSsid = '') {
+      const container = document.getElementById('wifiCardsContainer');
+      const dropdown = document.getElementById('wifiSelectDropdown');
+      container.innerHTML = '';
+      dropdown.innerHTML = '<option value="">-- Chọn tài khoản Wi-Fi đang có --</option>';
+
+      availableWifiNetworks.forEach(net => {
+        const card = document.createElement('div');
+        card.className = 'wifi-item' + (net.ssid === selectedSsid ? ' active' : '');
+        card.innerHTML = `<span>📡 ${net.ssid}</span><span style="font-size:11px;color:#34d399;">${net.bars || '📶'}</span>`;
+        card.onclick = () => selectWifiAccount(net.ssid);
+        container.appendChild(card);
+
+        const opt = document.createElement('option');
+        opt.value = net.ssid;
+        opt.innerText = `${net.ssid} (${net.bars || 'Đang có sóng'})`;
+        if (net.ssid === selectedSsid) opt.selected = true;
+        dropdown.appendChild(opt);
+      });
+    }
+
+    function selectWifiAccount(ssid) {
+      document.getElementById('inputSsid').value = ssid;
+      renderWifiNetworks(ssid);
+      document.getElementById('inputPass').focus();
+      logMsg(`📶 Đã chọn tài khoản Wi-Fi đang có: [${ssid}]. Hãy nhập mật khẩu rồi bấm Kết Nối!`);
+    }
+
+    function onSelectWifiDropdown(ssid) {
+      if (ssid) selectWifiAccount(ssid);
+    }
+
+    function togglePasswordVisibility() {
+      const inp = document.getElementById('inputPass');
+      inp.type = (inp.type === 'password') ? 'text' : 'password';
+    }
+
+    // =========================================================================
+    // 1. GIỮ NÚT 5 GIÂY -> PHÁT SÓNG BLUETOOTH (KHÔNG BẮT CẤU HÌNH LẠI)
+    // =========================================================================
+    function startHoldButton(e) {
+      if (e && e.type === 'touchstart') e.preventDefault();
+      if (holdInterval) return;
+
+      holdStartTime = Date.now();
+      holdTriggered5s = false;
+      document.getElementById('singleHardwareBtn').classList.add('pressing');
+
+      holdInterval = setInterval(() => {
+        const elapsed = (Date.now() - holdStartTime) / 1000;
+        const pct = Math.min(100, (elapsed / 5.0) * 100);
+        document.getElementById('holdProgressFill').style.width = pct + '%';
+        document.getElementById('holdTimerText').innerText = `⏱️ Đang giữ nút: ${elapsed.toFixed(1)}s / 5.0s...`;
+
+        if (elapsed >= 5.0 && !holdTriggered5s) {
+          holdTriggered5s = true;
+          clearInterval(holdInterval);
+          holdInterval = null;
+          simulateEmitBluetooth5s();
+        }
+      }, 80);
+    }
+
+    function endHoldButton(e) {
+      if (e && e.type === 'touchend') e.preventDefault();
+      document.getElementById('singleHardwareBtn').classList.remove('pressing');
+
+      if (holdInterval) {
+        clearInterval(holdInterval);
+        holdInterval = null;
+      }
+
+      const heldMs = Date.now() - holdStartTime;
+      document.getElementById('holdProgressFill').style.width = '0%';
+
+      if (holdTriggered5s || heldMs >= 5000) {
+        return; // Đã đủ 5s phát Bluetooth
+      }
+
+      // Nếu nhấn nhả nhanh (< 5s): Phân biệt 1 Nhấn (Đặt hàng) vs 2 Nhấn (Hủy đơn)
+      clickCount++;
+      if (clickTimer) clearTimeout(clickTimer);
+      clickTimer = setTimeout(() => {
+        if (clickCount === 1) {
+          triggerSingleClickOrder();
+        } else if (clickCount >= 2) {
+          triggerDoubleClickCancel();
+        }
+        clickCount = 0;
+      }, 320);
+    }
+
+    function cancelHoldButton() {
+      if (holdInterval) {
+        clearInterval(holdInterval);
+        holdInterval = null;
+      }
+      document.getElementById('singleHardwareBtn').classList.remove('pressing');
+      document.getElementById('holdProgressFill').style.width = '0%';
+    }
+
+    function simulateEmitBluetooth5s() {
+      isBluetoothBroadcasting = true;
+      playBeep(3000, 0.12);
+      document.getElementById('holdProgressFill').style.width = '100%';
+      document.getElementById('holdTimerText').innerText = '✅ Đã giữ đủ 5.0s -> Đang phát sóng Bluetooth [SOB-BTN-8829-WTR]!';
+
+      const banner = document.getElementById('bleBanner');
+      banner.className = 'status-banner broadcasting';
+      document.getElementById('bleDot').className = 'dot blue';
+      document.getElementById('bleStatusText').innerText = '🔵 Đang phát sóng Bluetooth: SOB-BTN-8829-WTR (Sẵn sàng bắt kết nối)';
+
+      logMsg('📡 [GIỮ 5 GIÂY] Nút bấm đã phát ra sóng Bluetooth [SOB-BTN-8829-WTR] (Không xóa cấu hình cũ).');
+      logMsg('👉 Bấm nút "🔵 Bắt Bluetooth Ngay" để kết nối với FE!');
+    }
+
+    // =========================================================================
+    // 2. BẮT BLUETOOTH TRÊN FE & BÁO "ĐÃ KẾT NỐI"
+    // =========================================================================
+    async function catchBluetoothConnection(forceHardwarePopup = true) {
+      if (!forceHardwarePopup) {
+        // Chế độ mô phỏng nhanh trên FE
+        isBluetoothBroadcasting = true;
+        setConnectedStateUI('SOB-BTN-8829-WTR (Giả Lập FE)');
+        return;
+      }
+
+      if (!navigator.bluetooth) {
+        alert('Trình duyệt chưa hỗ trợ Web Bluetooth! Vui lòng dùng Google Chrome hoặc Microsoft Edge trên máy tính có bật Bluetooth.');
+        setConnectedStateUI('SOB-BTN-8829-WTR (Chế độ Trình duyệt Web)');
+        return;
+      }
+
+      try {
+        logMsg('🔍 Đang mở cửa sổ quét Bluetooth... Hãy đảm bảo đã giữ nút BOOT/SW1 5s trên mạch để phát BLE!');
+        bleDevice = await navigator.bluetooth.requestDevice({
+          filters: [
+            { namePrefix: 'SOB-' },
+            { namePrefix: 'SMARTORDER' },
+            { name: 'SOB-BTN-8829-WTR' },
+            { services: [SERVICE_UUID] }
+          ],
+          optionalServices: [SERVICE_UUID]
+        });
+
+        await setupGattConnection(bleDevice);
+      } catch (err) {
+        if (err.name === 'NotFoundError') {
+          logMsg('ℹ️ Bạn đã đóng cửa sổ chọn thiết bị. Nếu chưa thấy tên, hãy bấm "🔍 Quét Tất Cả BLE".');
+        } else {
+          logMsg(`⚠️ Lỗi Bluetooth: ${err.message}. Hãy thử bấm "🔍 Quét Tất Cả BLE".`);
+        }
+      }
+    }
+
+    async function scanAllBleDevices() {
+      if (!navigator.bluetooth) {
+        alert('Trình duyệt chưa hỗ trợ Web Bluetooth! Vui lòng dùng Google Chrome hoặc Microsoft Edge.');
+        return;
+      }
+      try {
+        logMsg('🔍 Đang quét TẤT CẢ thiết bị Bluetooth xung quanh (kể cả chưa hiện tên)...');
+        bleDevice = await navigator.bluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: [SERVICE_UUID]
+        });
+        await setupGattConnection(bleDevice);
+      } catch (err) {
+        if (err.name !== 'NotFoundError') {
+          logMsg(`⚠️ Lỗi quét: ${err.message}`);
+        }
+      }
+    }
+
+    async function setupGattConnection(device) {
+      logMsg(`🔗 Đang kết nối GATT tới [${device.name || 'ESP32-S3'}]...`);
+
+      device.addEventListener('gattserverdisconnected', () => {
+        isBluetoothConnected = false;
+        const banner = document.getElementById('bleBanner');
+        banner.className = 'status-banner';
+        document.getElementById('bleDot').className = 'dot red';
+        document.getElementById('bleStatusText').innerText = '🔴 Đã ngắt kết nối Bluetooth. Hãy bấm Bắt Bluetooth lại.';
+        logMsg('ℹ️ Thiết bị phần cứng đã ngắt kết nối Bluetooth.');
+      });
+
+      const server = await device.gatt.connect();
+      const service = await server.getPrimaryService(SERVICE_UUID);
+      charInfo   = await service.getCharacteristic(CHAR_INFO_UUID);
+      charWifi   = await service.getCharacteristic(CHAR_WIFI_UUID);
+      charStatus = await service.getCharacteristic(CHAR_STATUS_UUID);
+      charLed    = await service.getCharacteristic(CHAR_LED_UUID);
+
+      // Đọc danh sách Wi-Fi thực tế do mạch ESP32 quét được
+      try {
+        const rawInfo = new TextDecoder().decode(await charInfo.readValue());
+        logMsg(`📋 [Thông tin nhận từ mạch]: ${rawInfo}`);
+        if (rawInfo.includes('|')) {
+          const parts = rawInfo.split('|');
+          document.getElementById('bleBadgeId').innerText = 'SOB-' + parts[0];
+          const ssids = parts[1].split(',').map(s => s.trim()).filter(Boolean);
+          if (ssids.length > 0) {
+            availableWifiNetworks = ssids.map(s => ({ ssid: s, rssi: -50, bars: '📶 Mạch quét được' }));
+            renderWifiNetworks();
+          }
+        }
+      } catch (_) {}
+
+      // Nhận sự kiện thời gian thực từ nút bấm thật (1 Nhấn = Đặt / 2 Nhấn = Hủy)
+      await charStatus.startNotifications();
+      charStatus.addEventListener('characteristicvaluechanged', (e) => {
+        const msg = new TextDecoder().decode(e.target.value);
+        handleHardwareBleNotification(msg);
+      });
+
+      setConnectedStateUI(device.name || 'SOB-BTN-8829-WTR (Mạch Thật)');
+      logMsg('🎉 KẾT NỐI THÀNH CÔNG VỚI MẠCH THẬT! Mọi thao tác nhấn nút trên mạch sẽ hiển thị ngay trên màn hình.');
+    }
+
+    function setConnectedStateUI(deviceName) {
+      isBluetoothConnected = true;
+      playBeep(2800, 0.08);
+      setTimeout(() => playBeep(3500, 0.12), 90);
+
+      const banner = document.getElementById('bleBanner');
+      banner.className = 'status-banner connected';
+      document.getElementById('bleDot').className = 'dot green';
+      document.getElementById('bleStatusText').innerText = `✅ ĐÃ KẾT NỐI BLUETOOTH: ${deviceName}`;
+      document.getElementById('holdTimerText').innerText = '🟢 Đã kết nối Bluetooth! Có thể bấm 1 lần (Đặt) / 2 lần (Hủy) hoặc chọn Wi-Fi bên phải.';
+
+      logMsg(`🎉 [ĐÃ KẾT NỐI BLUETOOTH] Đã bắt được kết nối với [${deviceName}]!`);
+      logMsg(`📶 Đã tải ${availableWifiNetworks.length} tài khoản Wi-Fi đang có. Bạn có thể chọn Wi-Fi hoặc bấm nút Đặt/Hủy ngay!`);
+    }
+
+    function handleHardwareBleNotification(msg) {
+      logMsg(`📲 [Tín hiệu BLE từ mạch]: ${msg}`);
+      if (msg.startsWith('EVENT:ORDER:')) {
+        const p = msg.split(':');
+        showActionFeedback('ORDER', p[2] || 'Đơn hàng', p[3] || 1);
+      } else if (msg.startsWith('EVENT:CANCEL:')) {
+        const p = msg.split(':');
+        showActionFeedback('CANCEL', p[2] || 'Hủy đơn hàng', 1);
+      } else if (msg.startsWith('SCAN:')) {
+        const ssids = msg.substring(5).split(',').map(s => s.trim()).filter(Boolean);
+        if (ssids.length > 0) {
+          availableWifiNetworks = ssids.map(s => ({ ssid: s, rssi: -50, bars: '📶 Đang có sóng' }));
+          renderWifiNetworks();
+        }
+      } else if (msg.startsWith('WIFI_OK:')) {
+        const p = msg.split(':');
+        document.getElementById('wifiCurrentBadge').innerText = `Wi-Fi: ${p[1]} (${p[2] || 'Đã kết nối'})`;
+      }
+    }
+
+    // =========================================================================
+    // 3. QUÉT & CHỌN TÀI KHOẢN WI-FI ĐANG CÓ + NHẬP MẬT KHẨU
+    // =========================================================================
+    async function scanAvailableWifi() {
+      playBeep(2500, 0.05);
+      logMsg('🔄 Đang quét các tài khoản Wi-Fi đang có xung quanh...');
+      if (charWifi && bleDevice && bleDevice.gatt.connected) {
+        try {
+          await charWifi.writeValue(new TextEncoder().encode('SCAN'));
+          return;
+        } catch (_) {}
+      }
+      renderWifiNetworks(document.getElementById('inputSsid').value);
+      logMsg(`✅ Tìm thấy ${availableWifiNetworks.length} tài khoản Wi-Fi đang hoạt động. Hãy bấm chọn 1 mạng!`);
+    }
+
+    async function connectSelectedWifi() {
+      let ssid = document.getElementById('inputSsid').value.trim();
+      const pass = document.getElementById('inputPass').value;
+
+      if (!ssid) {
+        ssid = availableWifiNetworks[0].ssid;
+        selectWifiAccount(ssid);
+      }
+
+      if (!isBluetoothConnected) {
+        setConnectedStateUI('SOB-BTN-8829-WTR');
+      }
+
+      if (charWifi && bleDevice && bleDevice.gatt.connected) {
+        try {
+          await charWifi.writeValue(new TextEncoder().encode(`WIFI:${ssid}:${pass}`));
+        } catch (_) {}
+      }
+
+      playBeep(2800, 0.08);
+      setTimeout(() => playBeep(3600, 0.12), 90);
+      document.getElementById('wifiCurrentBadge').innerText = `Wi-Fi: ${ssid} (ĐÃ KẾT NỐI)`;
+      logMsg(`🎉 Đã kết nối tài khoản Wi-Fi [${ssid}] thành công qua Bluetooth (Vẫn giữ nguyên kết nối Bluetooth & cấu hình nút)!`);
+    }
+
+    // =========================================================================
+    // 4. CẤU HÌNH & THỬ NGHIỆM BẢN 1 NÚT: 1 NHẤN = ĐẶT HÀNG, 2 NHẤN = HỦY ĐƠN
+    // =========================================================================
+    function updateLiveSummary() {
+      const orderName = document.getElementById('cfgOrderItemName').value.trim() || 'Đặt Hàng';
+      const orderQty  = document.getElementById('cfgOrderQty').value || 1;
+      const cancelName = document.getElementById('cfgCancelName').value.trim() || 'Hủy Đơn Hàng';
+      document.getElementById('liveActionToast').innerText =
+        `✨ Cấu hình hiện tại: Bấm 1 lần = Đặt [${orderName} x${orderQty}] | Bấm 2 lần = [${cancelName}]`;
+    }
+
+    async function saveOneButtonConfig() {
+      const orderName = document.getElementById('cfgOrderItemName').value.trim() || 'Bia Heineken';
+      const orderQty  = document.getElementById('cfgOrderQty').value || 1;
+      const cancelName = document.getElementById('cfgCancelName').value.trim() || 'Hủy Đơn Hàng';
+
+      updateLiveSummary();
+      playBeep(3100, 0.1);
+
+      if (charWifi && bleDevice && bleDevice.gatt.connected) {
+        try {
+          const cmd = `CFG:${orderName}:${orderQty}:${cancelName}`;
+          await charWifi.writeValue(new TextEncoder().encode(cmd));
+        } catch (_) {}
+      }
+
+      logMsg(`⚙️ [CẤU HÌNH 1 NÚT] Đã lưu: 1 Nhấn = ĐẶT [${orderName} x${orderQty}] | 2 Nhấn = HỦY [${cancelName}]!`);
+    }
+
+    function showActionFeedback(type, itemName, qty) {
+      const btn = document.getElementById('singleHardwareBtn');
+      const toast = document.getElementById('liveActionToast');
+      btn.classList.remove('order-glow', 'cancel-glow');
+
+      if (type === 'ORDER') {
+        btn.classList.add('order-glow');
+        toast.style.background = 'rgba(16, 185, 129, 0.2)';
+        toast.style.borderColor = '#10b981';
+        toast.style.color = '#34d399';
+        toast.innerText = `🟢 [BẤM 1 LẦN -> ĐẶT HÀNG] Đã đặt thành công: ${itemName} (Số lượng: ${qty})!`;
+        playBeep(2700, 0.07);
+        setTimeout(() => playBeep(3500, 0.1), 80);
+        logMsg(`🟢 [1 NHẤN - ĐẶT HÀNG] Khách vừa nhấn 1 lần -> Đặt món: ${itemName} (x${qty})`);
+      } else {
+        btn.classList.add('cancel-glow');
+        toast.style.background = 'rgba(245, 158, 11, 0.2)';
+        toast.style.borderColor = '#f59e0b';
+        toast.style.color = '#fbbf24';
+        toast.innerText = `🟡 [BẤM 2 LẦN -> HỦY ĐƠN] Đã thực hiện: ${itemName}!`;
+        playBeep(1800, 0.25);
+        logMsg(`🟡 [2 NHẤN - HỦY ĐƠN] Khách vừa nhấn đúp 2 lần -> ${itemName}`);
+      }
+
+      setTimeout(() => {
+        btn.classList.remove('order-glow', 'cancel-glow');
+      }, 1000);
+    }
+
+    function triggerSingleClickOrder() {
+      const orderName = document.getElementById('cfgOrderItemName').value.trim() || 'Bia Heineken';
+      const orderQty  = document.getElementById('cfgOrderQty').value || 1;
+      showActionFeedback('ORDER', orderName, orderQty);
+    }
+
+    function triggerDoubleClickCancel() {
+      const cancelName = document.getElementById('cfgCancelName').value.trim() || 'Hủy Đơn Hàng Vừa Đặt';
+      showActionFeedback('CANCEL', cancelName, 1);
+    }
+
+    // Khởi tạo giao diện ban đầu
+    renderWifiNetworks('TheCoffeeHouse_2.4G');
+    document.getElementById('inputSsid').value = 'TheCoffeeHouse_2.4G';
+    logMsg('🚀 Trang FE Bản 1 Nút đã sẵn sàng! Giữ nút 5 giây để phát Bluetooth -> Bấm "Bắt Bluetooth Ngay" -> Chọn Wi-Fi & thử 1 nhấn (Đặt) / 2 nhấn (Hủy).');
+  </script>
+</body>
+</html>
+

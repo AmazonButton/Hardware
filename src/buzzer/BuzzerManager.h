@@ -2,7 +2,7 @@
 #define BUZZER_MANAGER_H
 
 #include <Arduino.h>
-#include "config.h"
+#include "../../include/config.h"
 
 class BuzzerManager {
 public:
