@@ -114,3 +114,4 @@ Dự án hỗ trợ 2 biến thể phần cứng thông qua macro trong `include
 - **Smart Order Button IoT Engineering Team**
 - **Hardware Architecture & Firmware**: ESP32-S3 IoT Core Team
 - **Harness Framework Integration**: HEF v4.0.0
+
